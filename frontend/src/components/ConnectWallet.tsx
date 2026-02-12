@@ -1,37 +1,9 @@
 "use client";
-import { connect, disconnect } from "starknetkit";
-import { useState, useEffect } from "react";
+import { useWallet } from "@/context/WalletContext";
 import { motion } from "framer-motion";
 
 export default function ConnectWallet() {
-  const [connection, setConnection] = useState<any>(null);
-  const [address, setAddress] = useState<string>("");
-
-  useEffect(() => {
-    // Auto-connect logic could go here
-  }, []);
-
-  const connectWallet = async () => {
-    try {
-      const { wallet } = await connect({
-        modalMode: "alwaysAsk",
-        webWalletUrl: "https://web.argent.xyz"
-      });
-
-      if (wallet && (wallet as any).isConnected) {
-        setConnection(wallet);
-        setAddress((wallet as any).selectedAddress);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const disconnectWallet = async () => {
-    await disconnect({ clearLastWallet: true });
-    setConnection(null);
-    setAddress("");
-  };
+  const { address, connectWallet, disconnectWallet } = useWallet();
 
   return (
     <div className="flex items-center gap-4">

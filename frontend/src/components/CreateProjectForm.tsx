@@ -2,8 +2,14 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import clsx from "clsx";
+import { useWallet } from "@/context/WalletContext";
+import { CallData, cairo } from "starknet";
+
+// Replace with deployed contract address
+const CONTRACT_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export default function CreateProjectForm() {
+    const { account } = useWallet();
     const [title, setTitle] = useState("");
     const [goal, setGoal] = useState("");
     const [recipient, setRecipient] = useState("");
@@ -14,14 +20,39 @@ export default function CreateProjectForm() {
         setLoading(true);
         // Simulate oracle call
         setTimeout(() => {
-            setProofHash("0x" + Math.random().toString(16).substr(2, 64)); // Mock hash
+            setProofHash("0x" + Math.random().toString(16).substr(2, 64));
             setLoading(false);
         }, 1500);
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        alert(`Creating project "${title}" with goal ${goal} ETH. Hash: ${proofHash}`);
+
+        if (!account) {
+            alert("Please connect your wallet first.");
+            return;
+        }
+
+        try {
+            const goalUint256 = cairo.uint256(BigInt(parseFloat(goal) * 1e18)); // Convert ETH to wei
+
+            const call = {
+                contractAddress: CONTRACT_ADDRESS,
+                entrypoint: "create_project",
+                calldata: CallData.compile({
+                    title: title, // felt252 or ByteArray depending on contract. We used felt252 in contract
+                    funding_goal: goalUint256,
+                    recipient: recipient,
+                    proof_requirement_hash: proofHash
+                })
+            };
+
+            const tx = await account.execute(call);
+            alert(`Project creation transaction submitted! Hash: ${tx.transaction_hash}`);
+        } catch (error) {
+            console.error("Project creation failed:", error);
+            alert("Failed to create project. See console.");
+        }
     };
 
     return (

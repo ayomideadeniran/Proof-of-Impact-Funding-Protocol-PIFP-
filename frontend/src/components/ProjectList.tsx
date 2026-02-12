@@ -2,8 +2,12 @@
 import { useState } from "react";
 import ProjectCard from "./ProjectCard";
 import { motion } from "framer-motion";
+import { useWallet } from "@/context/WalletContext";
+import { CallData, cairo } from "starknet";
 
-// Mock data type
+// Replace with deployed contract address
+const CONTRACT_ADDRESS = "0x0000000000000000000000000000000000000000"; // Placeholder
+
 type Project = {
     id: number;
     title: string;
@@ -14,7 +18,6 @@ type Project = {
     isCompleted: boolean;
 };
 
-// Mock data
 const MOCK_PROJECTS: Project[] = [
     {
         id: 1,
@@ -47,9 +50,36 @@ const MOCK_PROJECTS: Project[] = [
 
 export default function ProjectList() {
     const [projects, setProjects] = useState<Project[]>(MOCK_PROJECTS);
+    const { account } = useWallet();
 
-    const handleDonate = (id: number) => {
-        alert(`Initiating donation for Project #${id}. In production, this opens wallet signature.`);
+    const handleDonate = async (id: number) => {
+        if (!account) {
+            alert("Please connect your wallet first.");
+            return;
+        }
+
+        try {
+            // Mock donation amount (0.01 ETH)
+            const amount = cairo.uint256(10000000000000000n);
+            // Mock commitment hash
+            const commitment = "0x123";
+
+            const call = {
+                contractAddress: CONTRACT_ADDRESS,
+                entrypoint: "donate",
+                calldata: CallData.compile({
+                    project_id: id,
+                    amount: amount,
+                    commitment: commitment
+                })
+            };
+
+            const tx = await account.execute(call);
+            alert(`Donation submitted! Transaction Hash: ${tx.transaction_hash}`);
+        } catch (error) {
+            console.error("Donation failed:", error);
+            alert("Donation failed. See console for details.");
+        }
     };
 
     return (

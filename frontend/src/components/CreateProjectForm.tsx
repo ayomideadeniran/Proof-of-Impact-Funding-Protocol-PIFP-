@@ -1,17 +1,15 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import clsx from "clsx";
 import { useWallet } from "@/context/WalletContext";
-import { CallData, RpcProvider, cairo } from "starknet";
+import { byteArray, RpcProvider, cairo } from "starknet";
 import { getPifpContractAddress } from "@/lib/config";
 import { useNotification } from "@/context/NotificationContext";
 import { waitForTransactionOutcome } from "@/lib/tx";
 import { saveProjectMetadata } from "@/lib/projectMetadata";
 import { useSecurity } from "@/context/SecurityContext";
 import { sha256ToFeltHex } from "@/lib/hash";
-
-import { ethers } from "ethers";
 
 function isHttpUrl(value: string): boolean {
     try {
@@ -22,7 +20,8 @@ function isHttpUrl(value: string): boolean {
     }
 }
 
-const textToFelt = sha256ToFeltHex;
+const PROOF_LINK_SEPARATOR = "|||";
+const PROOF_HASH_VISIBILITY_MS = 20000;
 
 export default function CreateProjectForm() {
     const { account, address } = useWallet();
@@ -42,6 +41,7 @@ export default function CreateProjectForm() {
     const [videoUrl, setVideoUrl] = useState("");
     const [proofLinksInput, setProofLinksInput] = useState("");
     const [proofHash, setProofHash] = useState("");
+    const [proofHashVisible, setProofHashVisible] = useState(false);
     const [copiedProofHash, setCopiedProofHash] = useState(false);
     const [copiedProofPackage, setCopiedProofPackage] = useState(false);
     const [loading, setLoading] = useState(false);
@@ -62,6 +62,21 @@ export default function CreateProjectForm() {
         proof_links: proofLinks.map((v) => v.trim()).sort()
     });
 
+    useEffect(() => {
+        if (!proofHashVisible || copiedProofHash || !proofHash) return;
+
+        const timeoutId = window.setTimeout(() => {
+            setProofHashVisible(false);
+            notify({
+                title: "Proof hash hidden",
+                message: "Copy it before it disappears. Generate again if you still need to see it.",
+                type: "info"
+            });
+        }, PROOF_HASH_VISIBILITY_MS);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [copiedProofHash, notify, proofHash, proofHashVisible]);
+
     const generateHash = async () => {
         if (!title || !description || !imageUrl || !videoUrl || proofLinks.length < 1) {
             notify({
@@ -76,11 +91,12 @@ export default function CreateProjectForm() {
         try {
             const localHash = await sha256ToFeltHex(canonicalEvidence);
             setProofHash(localHash);
+            setProofHashVisible(true);
             setCopiedProofHash(false);
             setCopiedProofPackage(false);
             notify({
                 title: "Proof hash generated",
-                message: "Hashed locally in your browser and tied to your evidence bundle.",
+                message: "This hash is shown once. Copy it now or copy the proof package before it disappears.",
                 type: "info"
             });
         } catch (error) {
@@ -108,6 +124,7 @@ export default function CreateProjectForm() {
             "https://example.org/clinic-needs-assessment.pdf\nhttps://example.org/equipment-quote-and-bill-of-materials.pdf\nhttps://example.org/local-health-board-approval-letter.pdf"
         );
         setProofHash("");
+        setProofHashVisible(false);
         setCopiedProofHash(false);
         setCopiedProofPackage(false);
         setAgreed(true);
@@ -141,6 +158,7 @@ export default function CreateProjectForm() {
         if (!proofHash) return;
         await navigator.clipboard.writeText(proofHash);
         setCopiedProofHash(true);
+        setProofHashVisible(false);
         notify({
             title: "Proof hash copied",
             message: "Stored to clipboard. Keep it safe for proof submission.",
@@ -151,11 +169,26 @@ export default function CreateProjectForm() {
     const copyProofPackage = async () => {
         await navigator.clipboard.writeText(canonicalEvidence);
         setCopiedProofPackage(true);
+        setProofHashVisible(false);
         notify({
             title: "Proof package copied",
             message: "Evidence package copied. Store it safely to regenerate proof hash later.",
             type: "success"
         });
+    };
+
+    const normalizeFeltInput = (value: string): string => {
+        return value === "0x" ? "0x0" : value;
+    };
+
+    const normalizeHexFelt = (value: string): string => {
+        const trimmed = value.trim();
+        if (!trimmed) return "0x0";
+        try {
+            return `0x${BigInt(trimmed).toString(16)}`;
+        } catch {
+            return trimmed;
+        }
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -188,7 +221,6 @@ export default function CreateProjectForm() {
         }
 
         try {
-            const encodedTitle = await textToFelt(title.trim());
             const contractAddress = getPifpContractAddress();
             const accountAddress = account.address?.toString().toLowerCase();
             if (accountAddress && contractAddress.toLowerCase() === accountAddress) {
@@ -196,20 +228,46 @@ export default function CreateProjectForm() {
                     "NEXT_PUBLIC_PIFP_CONTRACT_ADDRESS is set to your wallet account address. Use the deployed PIFP contract address."
                 );
             }
-            const goalUint256 = cairo.uint256(ethers.parseEther(goal));
-            const fixedDonationUint256 = cairo.uint256(ethers.parseEther(fixedDonation));
+            const goalUint256 = cairo.uint256(BigInt(parseFloat(goal) * 1e18));
+            const fixedDonationUint256 = cairo.uint256(BigInt(parseFloat(fixedDonation) * 1e18));
+            const titleCalldata = byteArray.byteArrayFromString(title.trim());
+            const descriptionCalldata = byteArray.byteArrayFromString(description.trim());
+            const imageCalldata = byteArray.byteArrayFromString(imageUrl.trim());
+            const videoCalldata = byteArray.byteArrayFromString(videoUrl.trim());
+            const proofLinksCalldata = byteArray.byteArrayFromString(proofLinks.join(PROOF_LINK_SEPARATOR));
 
             const call = {
                 contractAddress,
                 entrypoint: "create_project",
-                calldata: CallData.compile({
-                    title: encodedTitle,
-                    funding_goal: goalUint256,
-                    fixed_donation_amount: fixedDonationUint256,
-                    recipient,
-                    proof_requirement_hash: proofHash,
-                    otp_token: otpToken
-                })
+                calldata: [
+                    titleCalldata.data.length.toString(),
+                    ...titleCalldata.data.map(normalizeFeltInput),
+                    normalizeFeltInput(titleCalldata.pending_word),
+                    titleCalldata.pending_word_len.toString(),
+                    descriptionCalldata.data.length.toString(),
+                    ...descriptionCalldata.data.map(normalizeFeltInput),
+                    normalizeFeltInput(descriptionCalldata.pending_word),
+                    descriptionCalldata.pending_word_len.toString(),
+                    imageCalldata.data.length.toString(),
+                    ...imageCalldata.data.map(normalizeFeltInput),
+                    normalizeFeltInput(imageCalldata.pending_word),
+                    imageCalldata.pending_word_len.toString(),
+                    videoCalldata.data.length.toString(),
+                    ...videoCalldata.data.map(normalizeFeltInput),
+                    normalizeFeltInput(videoCalldata.pending_word),
+                    videoCalldata.pending_word_len.toString(),
+                    proofLinksCalldata.data.length.toString(),
+                    ...proofLinksCalldata.data.map(normalizeFeltInput),
+                    normalizeFeltInput(proofLinksCalldata.pending_word),
+                    proofLinksCalldata.pending_word_len.toString(),
+                    goalUint256.low.toString(),
+                    goalUint256.high.toString(),
+                    fixedDonationUint256.low.toString(),
+                    fixedDonationUint256.high.toString(),
+                    normalizeHexFelt(recipient),
+                    normalizeHexFelt(proofHash),
+                    normalizeHexFelt(otpToken)
+                ]
             };
 
             const tx = await account.execute(call);
@@ -239,12 +297,13 @@ export default function CreateProjectForm() {
             const latestProjectId = Number(BigInt(countCall[0] ?? "0"));
 
             if (latestProjectId > 0) {
-                saveProjectMetadata(address, latestProjectId, {
+                saveProjectMetadata(contractAddress, latestProjectId, {
                     title: title.trim(),
                     description: description.trim(),
                     imageUrl: imageUrl.trim(),
                     videoUrl: videoUrl.trim(),
                     proofLinks,
+                    proofHash,
                     createdAt: Date.now(),
                     creatorAddress: address || undefined
                 });
@@ -266,10 +325,13 @@ export default function CreateProjectForm() {
             setVideoUrl("");
             setProofLinksInput("");
             setProofHash("");
+            setProofHashVisible(false);
             setCopiedProofHash(false);
             setCopiedProofPackage(false);
             setAgreed(false);
             window.dispatchEvent(new Event("pifp:projects-updated"));
+            setTimeout(() => window.dispatchEvent(new Event("pifp:projects-updated")), 8000);
+            setTimeout(() => window.dispatchEvent(new Event("pifp:projects-updated")), 18000);
         } catch (error) {
             console.error("Project creation failed:", error);
             notify({
@@ -412,14 +474,32 @@ export default function CreateProjectForm() {
                             {loading ? "Generating..." : "Generate via Oracle"}
                         </button>
                     </div>
-                    {proofHash && (
+                    {proofHash && proofHashVisible && (
                         <motion.div
                             initial={{ opacity: 0, height: 0 }}
                             animate={{ opacity: 1, height: "auto" }}
-                            className="bg-teal-500/10 border border-teal-500/20 rounded-lg p-3 text-xs font-mono text-teal-200 break-all"
+                            className="bg-rose-500/10 border border-rose-400/30 rounded-lg p-4 text-xs font-mono text-rose-100 break-all"
                         >
-                            {proofHash}
+                            <p className="mb-2 font-sans text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-300">
+                                Copy This Now
+                            </p>
+                            <p>{proofHash}</p>
+                            <p className="mt-3 font-sans text-[11px] text-rose-200/80">
+                                This proof hash behaves like a one-time secret. If you do not copy it now, it will disappear and you must regenerate it before launch.
+                            </p>
                         </motion.div>
+                    )}
+                    {proofHash && !proofHashVisible && (
+                        <div className="rounded-lg border border-white/10 bg-black/30 p-3 text-xs text-gray-300">
+                            <p className="font-semibold text-white">
+                                Proof hash hidden
+                            </p>
+                            <p className="mt-1 text-gray-400">
+                                {proofCopied
+                                    ? "You already copied the required proof material."
+                                    : "Generate again if you need to reveal and copy the proof hash before launch."}
+                            </p>
+                        </div>
                     )}
                     <div className="mt-3 flex flex-wrap gap-2">
                         <button
@@ -447,7 +527,7 @@ export default function CreateProjectForm() {
                         </button>
                     </div>
                     <p className="mt-2 text-xs text-amber-300">
-                        You must copy proof hash or proof package before launch. Without this, proof-of-impact cannot be submitted later.
+                        Warning: this value will not be shown to donors or in the evidence modal. Copy the proof hash or proof package before launch or you will not be able to submit proof later.
                     </p>
                 </div>
 
@@ -476,7 +556,7 @@ export default function CreateProjectForm() {
                         <p>Image: {imageUrl || "Not set"}</p>
                         <p>Video: {videoUrl || "Not set"}</p>
                         <p>Proof links: {proofLinks.length}</p>
-                        <p>On-chain proof hash: {proofHash || "Not generated"}</p>
+                        <p>Proof credential status: {proofCopied ? "Copied and secured" : proofHash ? "Generated but not secured" : "Not generated"}</p>
                     </div>
                 </div>
 

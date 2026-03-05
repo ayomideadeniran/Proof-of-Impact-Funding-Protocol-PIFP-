@@ -553,3 +553,4 @@ export function useSecurity() {
     }
     return ctx;
 }
+// Finalizing commit 28: security context guards

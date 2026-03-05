@@ -12,7 +12,11 @@ pub trait IPIFP<TContractState> {
     );
     fn create_project(
         ref self: TContractState,
-        title: felt252,
+        title: ByteArray,
+        description: ByteArray,
+        image_url: ByteArray,
+        video_url: ByteArray,
+        proof_links_blob: ByteArray,
         funding_goal: u256,
         fixed_donation_amount: u256,
         recipient: ContractAddress,
@@ -26,6 +30,8 @@ pub trait IPIFP<TContractState> {
     fn has_donated(self: @TContractState, project_id: u64, donor: ContractAddress) -> bool;
     fn get_project(self: @TContractState, project_id: u64) -> Project;
     fn get_project_count(self: @TContractState) -> u64;
+    fn get_activity_count(self: @TContractState, user: ContractAddress) -> u64;
+    fn get_activity(self: @TContractState, user: ContractAddress, activity_id: u64) -> ActivityRecord;
 }
 
 #[starknet::interface]
@@ -42,7 +48,11 @@ pub trait IERC20<TContractState> {
 #[derive(Drop, Serde, starknet::Store)]
 pub struct Project {
     pub id: u64,
-    pub title: felt252,
+    pub title: ByteArray,
+    pub description: ByteArray,
+    pub image_url: ByteArray,
+    pub video_url: ByteArray,
+    pub proof_links_blob: ByteArray,
     pub funding_goal: u256,
     pub fixed_donation_amount: u256,
     pub funds_collected: u256,
@@ -53,9 +63,18 @@ pub struct Project {
     pub is_funded: bool,
 }
 
+#[derive(Drop, Serde, starknet::Store)]
+pub struct ActivityRecord {
+    pub id: u64,
+    pub kind: u8,
+    pub project_id: u64,
+    pub amount: u256,
+    pub timestamp: u64,
+}
+
 #[starknet::contract]
 pub mod PIFP {
-    use super::{IERC20Dispatcher, IERC20DispatcherTrait, Project, IPIFP};
+    use super::{ActivityRecord, IERC20Dispatcher, IERC20DispatcherTrait, Project, IPIFP};
     use starknet::{ContractAddress, get_caller_address, get_contract_address, get_block_timestamp};
     use starknet::contract_address_const;
     use core::starknet::storage::{
@@ -72,6 +91,8 @@ pub mod PIFP {
         has_donated_by_project: LegacyMap<(u64, ContractAddress), bool>,
         otp_token_expiry: LegacyMap<(ContractAddress, u8, u64, felt252), u64>,
         wallet_email_hash: LegacyMap<ContractAddress, felt252>,
+        activity_count: LegacyMap<ContractAddress, u64>,
+        activities: LegacyMap<(ContractAddress, u64), ActivityRecord>,
         owner: ContractAddress,
         oracle: ContractAddress,
         payment_token: ContractAddress,
@@ -90,7 +111,11 @@ pub mod PIFP {
     pub struct ProjectCreated {
         #[key]
         pub project_id: u64,
-        pub title: felt252,
+        pub title: ByteArray,
+        pub description: ByteArray,
+        pub image_url: ByteArray,
+        pub video_url: ByteArray,
+        pub proof_links_blob: ByteArray,
         pub funding_goal: u256,
         pub fixed_donation_amount: u256,
         pub creator: ContractAddress,
@@ -140,6 +165,21 @@ pub mod PIFP {
         self.otp_token_expiry.write((user, action_type, project_id, token), 0);
     }
 
+    fn log_activity(ref self: ContractState, user: ContractAddress, kind: u8, project_id: u64, amount: u256) {
+        let next_id = self.activity_count.read(user) + 1;
+        self.activity_count.write(user, next_id);
+        self.activities.write(
+            (user, next_id),
+            ActivityRecord {
+                id: next_id,
+                kind,
+                project_id,
+                amount,
+                timestamp: get_block_timestamp(),
+            }
+        );
+    }
+
     #[abi(embed_v0)]
     impl PIFPImpl of IPIFP<ContractState> {
         fn issue_otp_token(
@@ -159,7 +199,11 @@ pub mod PIFP {
 
         fn create_project(
             ref self: ContractState,
-            title: felt252,
+            title: ByteArray,
+            description: ByteArray,
+            image_url: ByteArray,
+            video_url: ByteArray,
+            proof_links_blob: ByteArray,
             funding_goal: u256,
             fixed_donation_amount: u256,
             recipient: ContractAddress,
@@ -173,7 +217,11 @@ pub mod PIFP {
             
             let project = Project {
                 id,
-                title,
+                title: title.clone(),
+                description: description.clone(),
+                image_url: image_url.clone(),
+                video_url: video_url.clone(),
+                proof_links_blob: proof_links_blob.clone(),
                 funding_goal,
                 fixed_donation_amount,
                 funds_collected: 0,
@@ -186,10 +234,15 @@ pub mod PIFP {
 
             self.projects.write(id, project);
             self.project_count.write(id);
+            log_activity(ref self, creator, 1, id, 0);
 
             self.emit(ProjectCreated {
                 project_id: id,
                 title,
+                description,
+                image_url,
+                video_url,
+                proof_links_blob,
                 funding_goal,
                 fixed_donation_amount,
                 creator,
@@ -229,6 +282,7 @@ pub mod PIFP {
                 project.is_funded = true;
             }
             self.projects.write(project_id, project);
+            log_activity(ref self, donor, 2, project_id, amount);
 
             self.emit(DonationReceived {
                 project_id,
@@ -248,8 +302,11 @@ pub mod PIFP {
 
             assert(proof_hash == project.proof_requirement_hash, 'Invalid proof hash');
 
+            let creator = project.creator;
+            let releasable_funds = project.funds_collected;
             project.is_completed = true;
             self.projects.write(project_id, project);
+            log_activity(ref self, creator, 3, project_id, releasable_funds);
 
             self.emit(ProofVerified {
                 project_id,
@@ -281,6 +338,14 @@ pub mod PIFP {
         fn get_project_count(self: @ContractState) -> u64 {
             self.project_count.read()
         }
+
+        fn get_activity_count(self: @ContractState, user: ContractAddress) -> u64 {
+            self.activity_count.read(user)
+        }
+
+        fn get_activity(self: @ContractState, user: ContractAddress, activity_id: u64) -> ActivityRecord {
+            self.activities.read((user, activity_id))
+        }
     }
 
     #[generate_trait]
@@ -303,6 +368,7 @@ pub mod PIFP {
                 amount: project.funds_collected,
                 recipient: project.recipient,
             });
+            log_activity(ref self, project.recipient, 4, project_id, project.funds_collected);
 
             // Prevent re-release.
             project.funds_collected = 0;

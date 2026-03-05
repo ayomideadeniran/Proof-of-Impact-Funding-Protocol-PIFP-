@@ -56,6 +56,7 @@ type Project = {
     hasDonated: boolean;
 };
 
+ // Handles project fetching, pagination, and robust ByteArray decoding
 export default function ProjectList() {
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState<boolean>(true);

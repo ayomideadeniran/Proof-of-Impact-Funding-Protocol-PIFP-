@@ -1,40 +1,59 @@
 @import "tailwindcss";
 
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  --font-heading: var(--font-outfit), ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+}
+
 :root {
-  --background: #05090f;
-  --foreground: #e6edf7;
-  --primary: #22d3ee;
-  --secondary: #0f172a;
-  --accent: #34d399;
+  --background: #09090b;
+  /* zinc-950 */
+  --foreground: #f4f4f5;
+  /* zinc-100 */
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #05090f;
-    --foreground: #e6edf7;
+    --background: #09090b;
+    --foreground: #f4f4f5;
   }
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-family: var(--font-sans);
   min-height: 100vh;
   overflow-x: hidden;
+  /* Add subtle background grid or noise if preferred, but a clean dark bg works best for glassmorphism */
+  background-image: radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.05) 0%, rgba(9, 9, 11, 1) 50%);
 }
 
-/* Glassmorphism */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+}
+
+/* Glassmorphism Refined */
 .glass {
-  background: rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  background: rgba(24, 24, 27, 0.4);
+  /* zinc-900 / 40% */
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  /* very subtle border */
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
 }
 
 a {
-  transition: color 0.2s ease;
+  transition: all 0.2s ease;
 }
 
 a:hover {
-  color: #8be9fd;
+  text-shadow: 0 0 8px rgba(52, 211, 153, 0.6);
+  /* emerald glow instead of hardcoded cyan */
 }

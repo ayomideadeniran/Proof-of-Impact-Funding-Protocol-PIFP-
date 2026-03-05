@@ -3,11 +3,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import ProjectCard from "./ProjectCard";
 import { motion } from "framer-motion";
 import { useWallet } from "@/context/WalletContext";
-import { CallData, RpcProvider, cairo, shortString } from "starknet";
+import { byteArray, CallData, RpcProvider, cairo } from "starknet";
 import { getPifpContractAddress, getPifpTokenAddress } from "@/lib/config";
 import { useNotification } from "@/context/NotificationContext";
 import { waitForTransactionOutcome } from "@/lib/tx";
-import { loadProjectMetadataMap } from "@/lib/projectMetadata";
+import { loadProjectMetadataByProofHash, loadProjectMetadataMap } from "@/lib/projectMetadata";
 import { useSecurity } from "@/context/SecurityContext";
 
 function readU256(low?: string, high?: string): bigint {
@@ -20,20 +20,23 @@ function formatEth(wei: bigint): string {
     return `${whole}.${frac}`;
 }
 
-function isLikelyReadableShortStringHex(value: string): boolean {
-    if (!value || !value.startsWith("0x")) return false;
-    const hex = value.slice(2);
-    if (!hex || hex.length % 2 !== 0) return false;
+function parseByteArray(calldata: string[], startIndex: number): { value: string; nextIndex: number } {
+    const wordCount = Number(BigInt(calldata[startIndex] ?? "0"));
+    const data = calldata.slice(startIndex + 1, startIndex + 1 + wordCount);
+    const pendingWord = calldata[startIndex + 1 + wordCount] ?? "0x0";
+    const pendingWordLen = Number(BigInt(calldata[startIndex + 2 + wordCount] ?? "0"));
 
-    const bytes = hex.match(/.{2}/g) ?? [];
-    const meaningfulBytes = bytes.filter((b) => b !== "00");
-    if (meaningfulBytes.length === 0) return false;
-
-    return meaningfulBytes.every((b) => {
-        const code = parseInt(b, 16);
-        return code >= 32 && code <= 126;
-    });
+    return {
+        value: byteArray.stringFromByteArray({
+            data,
+            pending_word: pendingWord,
+            pending_word_len: pendingWordLen
+        }),
+        nextIndex: startIndex + 3 + wordCount
+    };
 }
+
+const PROOF_LINK_SEPARATOR = "|||";
 
 type Project = {
     id: number;
@@ -73,7 +76,7 @@ export default function ProjectList() {
         try {
             setLoading(true);
             const contractAddress = getPifpContractAddress();
-            const metadataMap = loadProjectMetadataMap(address);
+            const metadataMap = loadProjectMetadataMap(contractAddress);
 
             const countCall = await provider.callContract({
                 contractAddress,
@@ -87,70 +90,69 @@ export default function ProjectList() {
                 return;
             }
 
-            // Fetch in batches to prevent rate limiting
-            const BATCH_SIZE = 10;
-            const allProjects: Project[] = [];
+            const onChainProjects = await Promise.all(
+                Array.from({ length: count }, async (_, index) => {
+                    const projectId = index + 1;
+                    const projectCall = await provider.callContract({
+                        contractAddress,
+                        entrypoint: "get_project",
+                        calldata: CallData.compile({ project_id: projectId })
+                    });
 
-            for (let i = 0; i < count; i += BATCH_SIZE) {
-                const batchIndices = Array.from(
-                    { length: Math.min(BATCH_SIZE, count - i) },
-                    (_, index) => i + index + 1
-                );
+                    let cursor = 1;
+                    const parsedTitle = parseByteArray(projectCall, cursor);
+                    cursor = parsedTitle.nextIndex;
+                    const parsedDescription = parseByteArray(projectCall, cursor);
+                    cursor = parsedDescription.nextIndex;
+                    const parsedImage = parseByteArray(projectCall, cursor);
+                    cursor = parsedImage.nextIndex;
+                    const parsedVideo = parseByteArray(projectCall, cursor);
+                    cursor = parsedVideo.nextIndex;
+                    const parsedProofLinks = parseByteArray(projectCall, cursor);
+                    cursor = parsedProofLinks.nextIndex;
 
-                const batchProjects = await Promise.all(
-                    batchIndices.map(async (projectId) => {
-                        const projectCall = await provider.callContract({
-                            contractAddress,
-                            entrypoint: "get_project",
-                            calldata: CallData.compile({ project_id: projectId })
-                        });
+                    const goalWei = readU256(projectCall[cursor], projectCall[cursor + 1]);
+                    const fixedDonationWei = readU256(projectCall[cursor + 2], projectCall[cursor + 3]);
+                    const raisedWei = readU256(projectCall[cursor + 4], projectCall[cursor + 5]);
+                    const creatorAddress = projectCall[cursor + 6];
+                    const recipientAddress = projectCall[cursor + 7];
+                    const proofHash = projectCall[cursor + 8] ?? "0x0";
+                    const isCompleted = (projectCall[cursor + 9] ?? "0x0") !== "0x0";
+                    const localMetadata =
+                        metadataMap[String(projectId)] ?? loadProjectMetadataByProofHash(proofHash) ?? undefined;
+                    const donatedCall = await provider.callContract({
+                        contractAddress,
+                        entrypoint: "has_donated",
+                        calldata: CallData.compile({ project_id: projectId, donor: address })
+                    });
+                    const hasDonated = (donatedCall[0] ?? "0x0") !== "0x0";
+                    const onChainProofLinks = parsedProofLinks.value
+                        .split(PROOF_LINK_SEPARATOR)
+                        .map((link) => link.trim())
+                        .filter(Boolean);
 
-                        const titleHex = projectCall[1] ?? "0x0";
-                        let title = `Project #${projectId}`;
-                        // Newer project titles are hashed to felt before sending on-chain.
-                        // Decode only if the felt looks like a readable short string.
-                        if (isLikelyReadableShortStringHex(titleHex)) {
-                            try {
-                                title = shortString.decodeShortString(titleHex);
-                            } catch {
-                                title = `Project #${projectId}`;
-                            }
-                        }
+                    return {
+                        id: Number(BigInt(projectCall[0] ?? `${projectId}`)),
+                        title: localMetadata?.title ?? (parsedTitle.value || `Project #${projectId}`),
+                        description:
+                            localMetadata?.description ?? (parsedDescription.value || `On-chain project #${projectId}`),
+                        goal: Number(goalWei) / 1e18,
+                        fixedDonation: Number(fixedDonationWei) / 1e18,
+                        fixedDonationWei,
+                        raised: Number(raisedWei) / 1e18,
+                        proofHash,
+                        isCompleted,
+                        imageUrl: localMetadata?.imageUrl ?? parsedImage.value,
+                        videoUrl: localMetadata?.videoUrl ?? parsedVideo.value,
+                        proofLinks: onChainProofLinks.length > 0 ? onChainProofLinks : localMetadata?.proofLinks ?? [],
+                        creatorAddress: localMetadata?.creatorAddress ?? creatorAddress ?? recipientAddress,
+                        createdAt: localMetadata?.createdAt,
+                        hasDonated
+                    } satisfies Project;
+                })
+            );
 
-                        const goalWei = readU256(projectCall[2], projectCall[3]);
-                        const fixedDonationWei = readU256(projectCall[4], projectCall[5]);
-                        const raisedWei = readU256(projectCall[6], projectCall[7]);
-                        const localMetadata = metadataMap[String(projectId)];
-                        const donatedCall = await provider.callContract({
-                            contractAddress,
-                            entrypoint: "has_donated",
-                            calldata: CallData.compile({ project_id: projectId, donor: address })
-                        });
-                        const hasDonated = (donatedCall[0] ?? "0x0") !== "0x0";
-
-                        return {
-                            id: Number(BigInt(projectCall[0] ?? `${projectId}`)),
-                            title: localMetadata?.title ?? title,
-                            description: localMetadata?.description ?? `On-chain project #${projectId}`,
-                            goal: Number(goalWei) / 1e18,
-                            fixedDonation: Number(fixedDonationWei) / 1e18,
-                            fixedDonationWei,
-                            raised: Number(raisedWei) / 1e18,
-                            proofHash: projectCall[10] ?? "0x0",
-                            isCompleted: (projectCall[11] ?? "0x0") !== "0x0",
-                            imageUrl: localMetadata?.imageUrl,
-                            videoUrl: localMetadata?.videoUrl,
-                            proofLinks: localMetadata?.proofLinks ?? [],
-                            creatorAddress: localMetadata?.creatorAddress ?? projectCall[8],
-                            createdAt: localMetadata?.createdAt,
-                            hasDonated
-                        } satisfies Project;
-                    })
-                );
-                allProjects.push(...batchProjects);
-            }
-
-            setProjects(allProjects);
+            setProjects(onChainProjects);
         } catch (error) {
             console.error("Failed to fetch projects:", error);
             setProjects([]);
@@ -283,6 +285,7 @@ export default function ProjectList() {
                     });
                 });
             window.dispatchEvent(new Event("pifp:projects-updated"));
+            setTimeout(() => window.dispatchEvent(new Event("pifp:projects-updated")), 8000);
         } catch (error) {
             console.error("Donation failed:", error);
             notify({

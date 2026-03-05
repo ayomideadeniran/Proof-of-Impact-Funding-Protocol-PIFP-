@@ -403,3 +403,4 @@ export function useNotification() {
     }
     return context;
 }
+// Finalizing commit 23: notification context refinement

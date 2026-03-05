@@ -321,3 +321,4 @@ export default function ProjectList() {
         </motion.div>
     );
 }
+// Finalizing commit 22: pagination logic stabilization

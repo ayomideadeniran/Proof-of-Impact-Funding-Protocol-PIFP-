@@ -422,22 +422,22 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
             {children}
 
             {open && (
-                <div className="fixed inset-0 z-[130] bg-black/70 backdrop-blur-sm p-4">
-                    <div className="mx-auto mt-20 max-w-md rounded-2xl border border-white/20 bg-[#0d131a] p-6 shadow-2xl">
-                        <h4 className="text-lg font-semibold text-white">Security Verification</h4>
-                        <p className="text-xs text-gray-300 mt-1">{reason || "Verify identity to proceed."}</p>
+                <div className="fixed inset-0 z-[130] flex flex-col items-center bg-black/80 backdrop-blur-md p-4 overflow-y-auto">
+                    <div className="my-auto w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950 p-6 sm:p-8 shadow-2xl">
+                        <h4 className="text-xl font-bold text-white tracking-tight">Security Verification</h4>
+                        <p className="text-sm text-zinc-400 mt-1">{reason || "Verify identity to proceed."}</p>
                         {pendingAction !== "general" && (
-                            <p className="text-[11px] text-teal-300 mt-1">
+                            <p className="text-[11px] font-semibold text-emerald-400 mt-2 uppercase tracking-wider">
                                 Action: {pendingAction.replace("_", " ")}
                             </p>
                         )}
-                        <p className="text-[11px] text-gray-400 mt-2">
+                        <p className="text-xs text-zinc-500 mt-3 p-3 rounded-xl bg-white/5 border border-white/5">
                             {walletHasBoundEmail
                                 ? `Wallet-linked email: ${savedEmailMasked || savedEmail} (OTP will always be sent here)`
                                 : "First-time signup: add an email to bind OTP security to this wallet."}
                         </p>
 
-                        <div className="space-y-3 mt-5">
+                        <div className="space-y-4 mt-6">
                             <input
                                 type="email"
                                 value={email}
@@ -445,7 +445,7 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
                                 placeholder="Email address"
                                 disabled={walletHasBoundEmail}
                                 className={clsx(
-                                    "w-full rounded-xl border border-white/15 bg-black/40 p-3 text-sm text-white placeholder-gray-500",
+                                    "w-full rounded-xl border border-white/5 bg-zinc-900/60 p-3.5 text-sm text-white placeholder-zinc-500 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50 transition-all hover:border-white/10",
                                     walletHasBoundEmail && "opacity-70 cursor-not-allowed"
                                 )}
                             />
@@ -457,30 +457,30 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
                                     setOtp(digitsOnly);
                                     if (otpError) setOtpError("");
                                 }}
-                                placeholder="OTP code"
+                                placeholder="6-digit OTP code"
                                 inputMode="numeric"
                                 maxLength={OTP_DIGITS}
                                 className={clsx(
-                                    "w-full rounded-xl border bg-black/40 p-3 text-sm text-white placeholder-gray-500",
-                                    otpError ? "border-rose-400/70 focus:outline-none focus:ring-2 focus:ring-rose-500/40" : "border-white/15"
+                                    "w-full rounded-xl border bg-zinc-900/60 p-3.5 text-sm text-white placeholder-zinc-500 transition-all hover:border-white/10",
+                                    otpError ? "border-rose-500/70 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500" : "border-white/5 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/50"
                                 )}
                             />
-                            {otpError && <p className="text-xs text-rose-300">{otpError}</p>}
+                            {otpError && <p className="text-xs text-rose-400 font-medium">{otpError}</p>}
                         </div>
-                        <div className="mt-2 text-[11px] text-gray-400">
-                            {!otpRequested && <p>Request OTP first. Verification is disabled until send succeeds.</p>}
+                        <div className="mt-3 text-[11px] text-zinc-500">
+                            {!otpRequested && <p>Request OTP first to enable verification.</p>}
                             {otpRequested && !isOtpExpired && (
                                 <p>
-                                    OTP sent to {otpRequestedForEmail}. Expires in {secondsUntilOtpExpiry}s. Only the most recent OTP works.
+                                    OTP sent to <strong className="text-zinc-300">{otpRequestedForEmail}</strong>. Expires in {secondsUntilOtpExpiry}s.
                                 </p>
                             )}
-                            {otpRequested && isOtpExpired && <p className="text-amber-300">OTP expired. Request a new OTP.</p>}
+                            {otpRequested && isOtpExpired && <p className="text-amber-400">OTP expired. Request a new OTP.</p>}
                         </div>
                         {devOtp && (
-                            <div className="mt-2 rounded-lg border border-emerald-300/30 bg-emerald-500/10 p-2 text-xs text-emerald-100">
-                                <p className="font-semibold">Dev OTP</p>
-                                <div className="mt-1 flex items-center justify-between gap-2">
-                                    <code className="font-mono text-sm tracking-widest">{devOtp}</code>
+                            <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-300">
+                                <p className="font-semibold uppercase tracking-wider text-[10px] text-emerald-400/80 mb-1">Dev Code Snippet</p>
+                                <div className="flex items-center justify-between gap-2">
+                                    <code className="font-mono text-sm tracking-widest font-bold text-white">{devOtp}</code>
                                     <button
                                         type="button"
                                         onClick={async () => {
@@ -491,7 +491,7 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
                                                 type: "info"
                                             });
                                         }}
-                                        className="rounded-md border border-white/20 px-2 py-1 text-[10px] text-white/90 hover:bg-white/10"
+                                        className="rounded-lg border border-emerald-500/30 px-2 py-1 text-[10px] font-semibold text-emerald-200 hover:bg-emerald-500/20 transition-colors"
                                     >
                                         Copy
                                     </button>
@@ -499,14 +499,14 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
                             </div>
                         )}
 
-                        <div className="mt-5 grid grid-cols-2 gap-2">
+                        <div className="mt-6 grid grid-cols-2 gap-3">
                             <button
                                 type="button"
                                 onClick={requestOtp}
                                 disabled={!canRequestOtp}
                                 className={clsx(
-                                    "rounded-xl py-2.5 text-sm font-semibold border border-white/15 bg-white/5 text-white",
-                                    !canRequestOtp && "opacity-60 cursor-not-allowed"
+                                    "rounded-xl py-3 text-sm font-semibold border border-white/10 bg-zinc-800/80 text-zinc-200 transition-all hover:bg-zinc-700/80 hover:border-white/20",
+                                    !canRequestOtp && "opacity-50 cursor-not-allowed hover:bg-zinc-800/80 hover:border-white/10"
                                 )}
                             >
                                 {requesting
@@ -522,18 +522,20 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
                                 onClick={verifyOtp}
                                 disabled={!canVerifyOtp}
                                 className={clsx(
-                                    "rounded-xl py-2.5 text-sm font-semibold bg-gradient-to-r from-teal-500 to-emerald-600 text-white",
-                                    !canVerifyOtp && "opacity-60 cursor-not-allowed"
+                                    "rounded-xl py-3 text-sm font-bold border transition-all",
+                                    !canVerifyOtp
+                                        ? "bg-zinc-900 border-white/5 text-zinc-500 cursor-not-allowed"
+                                        : "border-emerald-500/50 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-[0_0_15px_rgba(16,185,129,0.2)] hover:shadow-[0_0_25px_rgba(16,185,129,0.4)]"
                                 )}
                             >
-                                {verifying ? "Verifying..." : "Verify"}
+                                {verifying ? "Verifying..." : "Verify & Continue"}
                             </button>
                         </div>
 
                         <button
                             type="button"
                             onClick={closeModal}
-                            className="mt-3 w-full rounded-xl py-2 text-xs text-gray-300 hover:text-white"
+                            className="mt-4 w-full rounded-xl py-2 text-xs font-medium text-zinc-500 hover:text-white transition-colors"
                         >
                             Cancel
                         </button>

@@ -84,6 +84,7 @@ export const WalletProvider = ({ children }: { children: ReactNode }) => {
                     new InjectedConnector({ options: { id: "argentX" } }),
                     new InjectedConnector({ options: { id: "braavos" } }),
                     new WebWalletConnector({ url: "https://web.argent.xyz" }),
+                    // @ts-ignore: starknetkit type inconsistency
                     new ArgentMobileConnector()
                 ],
                 modalMode: "alwaysAsk"

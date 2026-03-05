@@ -117,7 +117,8 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
             const map = loadProfileMap();
             const profile = map[walletAddress];
             const fallbackEmail = profile?.email ?? "";
-            setVerified(Boolean(profile?.verified));
+            // Start as unverified until we hear from the server.
+            setVerified(false);
             setSavedEmail(fallbackEmail);
             setSavedEmailMasked(profile?.emailMasked ?? "");
             setEmail(fallbackEmail);
@@ -129,15 +130,16 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
                     setSavedEmail(fallbackEmail);
                     setSavedEmailMasked(data.email_masked ?? "");
                     setEmail(fallbackEmail);
-                    setVerified(Boolean(profile?.verified));
+                    setVerified(true);
                     saveProfile(walletAddress, {
                         email: fallbackEmail,
                         emailMasked: data.email_masked ?? "",
-                        verified: Boolean(profile?.verified)
+                        verified: true
                     });
                 }
             } catch {
-                // Keep local fallback only.
+                // If API is down, assume unverified for safety.
+                setVerified(false);
             }
         };
         void load();
@@ -510,10 +512,10 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
                                 {requesting
                                     ? "Sending..."
                                     : isRequestCoolingDown
-                                      ? `Resend in ${secondsUntilResend}s`
-                                      : otpRequested
-                                        ? "Resend OTP"
-                                        : "Request OTP"}
+                                        ? `Resend in ${secondsUntilResend}s`
+                                        : otpRequested
+                                            ? "Resend OTP"
+                                            : "Request OTP"}
                             </button>
                             <button
                                 type="button"

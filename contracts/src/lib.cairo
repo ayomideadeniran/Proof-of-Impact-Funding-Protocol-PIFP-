@@ -21,7 +21,6 @@ pub trait IPIFP<TContractState> {
     ) -> u64;
     fn donate(ref self: TContractState, project_id: u64, amount: u256, commitment: felt252, otp_token: felt252);
     fn submit_proof(ref self: TContractState, project_id: u64, proof_hash: felt252, otp_token: felt252);
-    fn release_funds(ref self: TContractState, project_id: u64);
     fn upsert_wallet_email_hash(ref self: TContractState, user: ContractAddress, email_hash: felt252);
     fn get_wallet_email_hash(self: @TContractState, user: ContractAddress) -> felt252;
     fn has_donated(self: @TContractState, project_id: u64, donor: ContractAddress) -> bool;
@@ -260,6 +259,32 @@ pub mod PIFP {
             self.release_funds(project_id);
         }
 
+        fn upsert_wallet_email_hash(ref self: ContractState, user: ContractAddress, email_hash: felt252) {
+            let caller = get_caller_address();
+            assert(caller == self.oracle.read(), 'Only oracle');
+            assert(email_hash != 0, 'Invalid email hash');
+            self.wallet_email_hash.write(user, email_hash);
+        }
+
+        fn get_wallet_email_hash(self: @ContractState, user: ContractAddress) -> felt252 {
+            self.wallet_email_hash.read(user)
+        }
+
+        fn get_project(self: @ContractState, project_id: u64) -> Project {
+            self.projects.read(project_id)
+        }
+
+        fn has_donated(self: @ContractState, project_id: u64, donor: ContractAddress) -> bool {
+            self.has_donated_by_project.read((project_id, donor))
+        }
+
+        fn get_project_count(self: @ContractState) -> u64 {
+            self.project_count.read()
+        }
+    }
+
+    #[generate_trait]
+    impl InternalFunctions of InternalFunctionsTrait {
         fn release_funds(ref self: ContractState, project_id: u64) {
             let mut project = self.projects.read(project_id);
             assert(project.is_completed, 'Project not completed');
@@ -282,29 +307,6 @@ pub mod PIFP {
             // Prevent re-release.
             project.funds_collected = 0;
             self.projects.write(project_id, project);
-        }
-
-        fn upsert_wallet_email_hash(ref self: ContractState, user: ContractAddress, email_hash: felt252) {
-            let caller = get_caller_address();
-            assert(caller == self.oracle.read(), 'Only oracle');
-            assert(email_hash != 0, 'Invalid email hash');
-            self.wallet_email_hash.write(user, email_hash);
-        }
-
-        fn get_wallet_email_hash(self: @ContractState, user: ContractAddress) -> felt252 {
-            self.wallet_email_hash.read(user)
-        }
-
-        fn get_project(self: @ContractState, project_id: u64) -> Project {
-            self.projects.read(project_id)
-        }
-
-        fn has_donated(self: @ContractState, project_id: u64, donor: ContractAddress) -> bool {
-            self.has_donated_by_project.read((project_id, donor))
-        }
-
-        fn get_project_count(self: @ContractState) -> u64 {
-            self.project_count.read()
         }
     }
 }

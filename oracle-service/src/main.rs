@@ -166,8 +166,7 @@ fn run_sncast_invoke(
     let mut last_error = String::new();
     for rpc_url in urls {
         let mut cmd = Command::new(&sncast_bin);
-        cmd.arg("--wait")
-            .arg("--account")
+        cmd.arg("--account")
             .arg(&account_name)
             .arg("invoke")
             .arg("--url")

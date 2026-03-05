@@ -11,6 +11,8 @@ import { saveProjectMetadata } from "@/lib/projectMetadata";
 import { useSecurity } from "@/context/SecurityContext";
 import { sha256ToFeltHex } from "@/lib/hash";
 
+import { ethers } from "ethers";
+
 function isHttpUrl(value: string): boolean {
     try {
         const u = new URL(value);
@@ -194,8 +196,8 @@ export default function CreateProjectForm() {
                     "NEXT_PUBLIC_PIFP_CONTRACT_ADDRESS is set to your wallet account address. Use the deployed PIFP contract address."
                 );
             }
-            const goalUint256 = cairo.uint256(BigInt(parseFloat(goal) * 1e18));
-            const fixedDonationUint256 = cairo.uint256(BigInt(parseFloat(fixedDonation) * 1e18));
+            const goalUint256 = cairo.uint256(ethers.parseEther(goal));
+            const fixedDonationUint256 = cairo.uint256(ethers.parseEther(fixedDonation));
 
             const call = {
                 contractAddress,
@@ -268,8 +270,6 @@ export default function CreateProjectForm() {
             setCopiedProofPackage(false);
             setAgreed(false);
             window.dispatchEvent(new Event("pifp:projects-updated"));
-            setTimeout(() => window.dispatchEvent(new Event("pifp:projects-updated")), 8000);
-            setTimeout(() => window.dispatchEvent(new Event("pifp:projects-updated")), 18000);
         } catch (error) {
             console.error("Project creation failed:", error);
             notify({

@@ -87,59 +87,70 @@ export default function ProjectList() {
                 return;
             }
 
-            const onChainProjects = await Promise.all(
-                Array.from({ length: count }, async (_, index) => {
-                    const projectId = index + 1;
-                    const projectCall = await provider.callContract({
-                        contractAddress,
-                        entrypoint: "get_project",
-                        calldata: CallData.compile({ project_id: projectId })
-                    });
+            // Fetch in batches to prevent rate limiting
+            const BATCH_SIZE = 10;
+            const allProjects: Project[] = [];
 
-                    const titleHex = projectCall[1] ?? "0x0";
-                    let title = `Project #${projectId}`;
-                    // Newer project titles are hashed to felt before sending on-chain.
-                    // Decode only if the felt looks like a readable short string.
-                    if (isLikelyReadableShortStringHex(titleHex)) {
-                        try {
-                            title = shortString.decodeShortString(titleHex);
-                        } catch {
-                            title = `Project #${projectId}`;
+            for (let i = 0; i < count; i += BATCH_SIZE) {
+                const batchIndices = Array.from(
+                    { length: Math.min(BATCH_SIZE, count - i) },
+                    (_, index) => i + index + 1
+                );
+
+                const batchProjects = await Promise.all(
+                    batchIndices.map(async (projectId) => {
+                        const projectCall = await provider.callContract({
+                            contractAddress,
+                            entrypoint: "get_project",
+                            calldata: CallData.compile({ project_id: projectId })
+                        });
+
+                        const titleHex = projectCall[1] ?? "0x0";
+                        let title = `Project #${projectId}`;
+                        // Newer project titles are hashed to felt before sending on-chain.
+                        // Decode only if the felt looks like a readable short string.
+                        if (isLikelyReadableShortStringHex(titleHex)) {
+                            try {
+                                title = shortString.decodeShortString(titleHex);
+                            } catch {
+                                title = `Project #${projectId}`;
+                            }
                         }
-                    }
 
-                    const goalWei = readU256(projectCall[2], projectCall[3]);
-                    const fixedDonationWei = readU256(projectCall[4], projectCall[5]);
-                    const raisedWei = readU256(projectCall[6], projectCall[7]);
-                    const localMetadata = metadataMap[String(projectId)];
-                    const donatedCall = await provider.callContract({
-                        contractAddress,
-                        entrypoint: "has_donated",
-                        calldata: CallData.compile({ project_id: projectId, donor: address })
-                    });
-                    const hasDonated = (donatedCall[0] ?? "0x0") !== "0x0";
+                        const goalWei = readU256(projectCall[2], projectCall[3]);
+                        const fixedDonationWei = readU256(projectCall[4], projectCall[5]);
+                        const raisedWei = readU256(projectCall[6], projectCall[7]);
+                        const localMetadata = metadataMap[String(projectId)];
+                        const donatedCall = await provider.callContract({
+                            contractAddress,
+                            entrypoint: "has_donated",
+                            calldata: CallData.compile({ project_id: projectId, donor: address })
+                        });
+                        const hasDonated = (donatedCall[0] ?? "0x0") !== "0x0";
 
-                    return {
-                        id: Number(BigInt(projectCall[0] ?? `${projectId}`)),
-                        title: localMetadata?.title ?? title,
-                        description: localMetadata?.description ?? `On-chain project #${projectId}`,
-                        goal: Number(goalWei) / 1e18,
-                        fixedDonation: Number(fixedDonationWei) / 1e18,
-                        fixedDonationWei,
-                        raised: Number(raisedWei) / 1e18,
-                        proofHash: projectCall[10] ?? "0x0",
-                        isCompleted: (projectCall[11] ?? "0x0") !== "0x0",
-                        imageUrl: localMetadata?.imageUrl,
-                        videoUrl: localMetadata?.videoUrl,
-                        proofLinks: localMetadata?.proofLinks ?? [],
-                        creatorAddress: localMetadata?.creatorAddress ?? projectCall[8],
-                        createdAt: localMetadata?.createdAt,
-                        hasDonated
-                    } satisfies Project;
-                })
-            );
+                        return {
+                            id: Number(BigInt(projectCall[0] ?? `${projectId}`)),
+                            title: localMetadata?.title ?? title,
+                            description: localMetadata?.description ?? `On-chain project #${projectId}`,
+                            goal: Number(goalWei) / 1e18,
+                            fixedDonation: Number(fixedDonationWei) / 1e18,
+                            fixedDonationWei,
+                            raised: Number(raisedWei) / 1e18,
+                            proofHash: projectCall[10] ?? "0x0",
+                            isCompleted: (projectCall[11] ?? "0x0") !== "0x0",
+                            imageUrl: localMetadata?.imageUrl,
+                            videoUrl: localMetadata?.videoUrl,
+                            proofLinks: localMetadata?.proofLinks ?? [],
+                            creatorAddress: localMetadata?.creatorAddress ?? projectCall[8],
+                            createdAt: localMetadata?.createdAt,
+                            hasDonated
+                        } satisfies Project;
+                    })
+                );
+                allProjects.push(...batchProjects);
+            }
 
-            setProjects(onChainProjects);
+            setProjects(allProjects);
         } catch (error) {
             console.error("Failed to fetch projects:", error);
             setProjects([]);
@@ -272,7 +283,6 @@ export default function ProjectList() {
                     });
                 });
             window.dispatchEvent(new Event("pifp:projects-updated"));
-            setTimeout(() => window.dispatchEvent(new Event("pifp:projects-updated")), 8000);
         } catch (error) {
             console.error("Donation failed:", error);
             notify({

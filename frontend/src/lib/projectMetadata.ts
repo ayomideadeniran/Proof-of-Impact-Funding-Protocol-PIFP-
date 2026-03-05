@@ -9,6 +9,7 @@ export type ProjectEvidence = {
     creatorAddress?: string;
 };
 
+ // Legacy storage key for metadata fallback logic
 const STORAGE_KEY_PREFIX = "pifp_project_metadata_v2";
 const LEGACY_STORAGE_KEY_PREFIX = "pifp_project_metadata_v1";
 const HASH_STORAGE_KEY = "pifp_project_metadata_by_hash_v1";

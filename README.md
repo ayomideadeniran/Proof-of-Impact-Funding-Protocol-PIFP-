@@ -1,14 +1,15 @@
 # Proof-of-Impact Funding Protocol (PIFP)
 
 ## Starknet Re{define} Hackathon Project Document
+**Primary Track: Wildcard**
 
 ---
 
 ## 1. Project Overview
 
-**Proof-of-Impact Funding Protocol (PIFP)** is a trust-minimized global funding platform that ensures donated funds are only released when verifiable real-world impact occurs.
+**Proof-of-Impact Funding Protocol (PIFP)** is a Starknet funding platform that ensures donated funds are only released when verifiable real-world impact occurs.
 
-Traditional donation systems rely on trust in intermediaries such as NGOs, governments, or organizations. PIFP replaces trust with cryptographic verification using Starknet smart contracts and Bitcoin-backed funding pools.
+Traditional donation systems rely on trust in intermediaries such as NGOs, governments, or organizations. PIFP reduces trust assumptions with Starknet smart contracts, evidence hashing, and on-chain release conditions.
 
 The system locks funds and releases them automatically when verified proof of project completion is submitted and validated.
 
@@ -75,40 +76,34 @@ If valid, funds are automatically released to the project recipient.
 
 ---
 
-## 5. Privacy Model
+## 5. Current Privacy Guarantees
 
-Donor identity is hidden using a commitment/nullifier scheme.
+PIFP currently uses **selective disclosure** and **hash commitments**, not full confidential transactions.
 
-### Donation Commitment
+What is private in this version:
 
-commitment = hash(secret + amount + project_id)
+* Raw proof payload is hashed in-browser before submission
+* Only proof hash is submitted on-chain (`felt252`)
+* Project evidence can be disclosed off-chain while integrity stays anchored on-chain
 
-The contract stores only the commitment, not the user identity.
+What is public in this version:
 
-Later, the donor can prove participation without revealing identity.
+* Donation transactions and sender addresses on Starknet
+* Project funding totals and completion status
 
-Benefits:
-
-* Anonymous donations
-* Prevents tracking
-* Privacy-preserving philanthropy
+This model improves integrity and reduces unnecessary data exposure, but it is not a full anonymity system.
 
 ---
 
-## 6. Bitcoin Integration
+## 6. Bitcoin Roadmap
 
-Bitcoin acts as the funding asset.
+This submission focuses on Starknet-native funding logic. Bitcoin-native settlement is planned as a next milestone.
 
-Starknet smart contract controls release conditions while Bitcoin provides monetary settlement.
+Planned direction:
 
-Flow:
-
-1. BTC deposited
-2. Wrapped/represented on Starknet
-3. Locked in contract
-4. Released only after proof verification
-
-This demonstrates Starknet as a Bitcoin execution layer.
+1. BTC representation on Starknet
+2. Proof-gated release logic for BTC-backed value
+3. Optional bridge/routing integrations for Bitcoin liquidity
 
 ---
 
@@ -181,17 +176,23 @@ Minimal interface:
 
 ## 12. Hackathon Track Alignment
 
-### Privacy Track
+### Primary: Wildcard
 
-Anonymous donations using commitments
+PIFP delivers a complete Starknet funding product with anti-scam controls:
 
-### Bitcoin Track
+* OTP-gated critical actions
+* Evidence-linked project creation
+* One-donation-per-wallet per project
+* Fixed per-project donation amount chosen by project creator
+* On-chain proof-gated release flow
 
-Bitcoin-backed funding pools
+### Secondary Narrative: Privacy-Aware Design
 
-### Wildcard Impact
+PIFP uses hashed proof commitments and selective disclosure to minimize exposed sensitive data.
 
-Global corruption-resistant aid infrastructure
+### Future Narrative: Bitcoin
+
+Bitcoin-backed settlement is a roadmap extension after this hackathon build.
 
 ---
 
@@ -223,11 +224,27 @@ It replaces trust-based funding with cryptographic accountability.
 
 PIFP transforms global funding into a verifiable system where impact, not promises, controls payments.
 
-By combining Bitcoin settlement, Starknet execution, and privacy-preserving commitments, the protocol enables transparent and trustless global aid distribution.
+By combining Starknet execution, proof-gated release logic, and privacy-aware hashing, the protocol enables transparent and trust-minimized aid distribution.
 
 ---
 
-## 16. Security & Authentication Model (Tight Security Implementation)
+## 16. Privacy Limitations & Next Steps
+
+Current limitations:
+
+* Donor addresses are visible on public chain data
+* No zero-knowledge proof verification circuit in this version
+* No encrypted on-chain state for donations
+
+Next steps:
+
+* Add zk-proof based evidence verification
+* Add optional encrypted evidence bundles with access control
+* Introduce stronger private donation patterns while preserving auditability
+
+---
+
+## 17. Security & Authentication Model (Tight Security Implementation)
 
 The platform implements multi-layer security combining Web2 authentication protections and Web3 cryptographic guarantees.
 

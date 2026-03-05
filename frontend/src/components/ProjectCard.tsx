@@ -243,3 +243,4 @@ const ProjectCard: React.FC<ProjectCardProps> = ({ project, onDonate }) => {
 };
 
 export default ProjectCard;
+// Finalizing commit 25: project card styling

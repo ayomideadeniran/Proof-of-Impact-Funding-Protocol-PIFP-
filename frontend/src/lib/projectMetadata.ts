@@ -79,3 +79,4 @@ export function loadProjectMetadataByProofHash(proofHash: string): ProjectEviden
     const byHash = readMap(window.localStorage.getItem(HASH_STORAGE_KEY));
     return byHash[normalizeHashKey(proofHash)] ?? null;
 }
+// Finalizing commit 29: project metadata helpers

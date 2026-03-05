@@ -72,3 +72,4 @@ const Navbar = () => {
 };
 
 export default Navbar;
+// Finalizing commit 27: navbar navigation logic

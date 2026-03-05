@@ -45,3 +45,4 @@ export default function RootLayout({
     </html>
   );
 }
+// Finalizing commit 26: app layout overview

@@ -3,22 +3,18 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN_DIR="$ROOT_DIR/.render/bin"
+CARGO_INSTALL_ROOT="$ROOT_DIR/.render/cargo"
 
 mkdir -p "$BIN_DIR"
-export PATH="$BIN_DIR:$HOME/.starkup/bin:$PATH"
+mkdir -p "$CARGO_INSTALL_ROOT"
+export PATH="$BIN_DIR:$CARGO_INSTALL_ROOT/bin:$PATH"
 
 if ! command -v sncast >/dev/null 2>&1; then
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.starkup.sh | sh
-fi
-
-if [ -f "$HOME/.starkup/env" ]; then
-  # shellcheck disable=SC1090
-  source "$HOME/.starkup/env"
-fi
-
-if ! command -v sncast >/dev/null 2>&1; then
-  echo "sncast installation failed during Render build" >&2
-  exit 1
+  cargo install \
+    --git https://github.com/foundry-rs/starknet-foundry.git \
+    --locked \
+    --root "$CARGO_INSTALL_ROOT" \
+    sncast
 fi
 
 cp "$(command -v sncast)" "$BIN_DIR/sncast"

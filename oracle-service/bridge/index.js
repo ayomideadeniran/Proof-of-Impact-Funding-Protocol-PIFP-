@@ -31,6 +31,16 @@ function padResourceBounds(resourceBounds, numerator = 3, denominator = 2) {
     };
 }
 
+async function resolveSupportedBlockTag(provider, accountAddress) {
+    try {
+        await provider.getNonceForAddress(accountAddress, "pending");
+        return "pending";
+    } catch (error) {
+        console.warn(`Pending block tag unsupported, falling back to latest: ${error.message}`);
+        return "latest";
+    }
+}
+
 async function main() {
     const entrypoint = process.argv[2];
     const calldata = process.argv.slice(3);
@@ -55,9 +65,11 @@ async function main() {
     console.log(`Executing ${entrypoint} on ${contractAddress} with calldata:`, calldata);
 
     try {
-        // Estimate against pending state so fees/nonces reflect mempool conditions.
-        console.log("Fetching nonce (pending)...");
-        const nonce = await provider.getNonceForAddress(accountAddress, "pending");
+        const blockTag = await resolveSupportedBlockTag(provider, accountAddress);
+
+        // Estimate against the freshest block tag supported by the RPC node.
+        console.log(`Fetching nonce (${blockTag})...`);
+        const nonce = await provider.getNonceForAddress(accountAddress, blockTag);
         console.log(`Using nonce: ${nonce}`);
 
         // Include validation in estimation; some account contracts need materially more
@@ -71,7 +83,7 @@ async function main() {
         const estimate = await account.estimateInvokeFee(call, {
             version: constants.TRANSACTION_VERSION.V3,
             nonce,
-            blockIdentifier: "pending",
+            blockIdentifier: blockTag,
             skipValidate: false,
         });
         const resourceBounds = padResourceBounds(estimate.resourceBounds);
@@ -84,7 +96,7 @@ async function main() {
             {
                 version: constants.TRANSACTION_VERSION.V3,
                 nonce,
-                blockIdentifier: "pending",
+                blockIdentifier: blockTag,
                 skipValidate: false,
                 resourceBounds,
             }

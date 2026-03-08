@@ -133,71 +133,13 @@ fn normalize_hash(hash: &str) -> Result<String, String> {
 }
 
 use starknet::{
-    accounts::{Account, Call, ExecutionEncoding, SingleOwnerAccount},
     core::{
         types::FieldElement,
         utils::get_selector_from_name,
     },
-    providers::{
-        jsonrpc::{HttpTransport, JsonRpcClient},
-        Provider,
-    },
-    signers::{LocalWallet, SigningKey},
+    signers::SigningKey,
 };
 use url::Url;
-
-async fn get_starknet_provider() -> Result<JsonRpcClient<HttpTransport>, String> {
-    let urls = vec![
-        std::env::var("ORACLE_RPC_URL").unwrap_or_else(|_| "https://free-rpc.nethermind.io/sepolia-juno".to_string()),
-        "https://starknet-sepolia.public.blastapi.io".to_string(),
-        "https://starknet-sepolia-rpc.publicnode.com".to_string(),
-        "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_6/ckCaCOPs1z8MLhPX4-hgd".to_string(),
-    ];
-
-    for rpc_url in urls {
-        println!("Testing RPC provider: {}", rpc_url);
-        if let Ok(url) = Url::parse(&rpc_url) {
-            let provider = JsonRpcClient::new(HttpTransport::new(url));
-            match provider.block_number().await {
-                Ok(n) => {
-                    println!("Selected RPC provider successfully: {} (Block: {})", rpc_url, n);
-                    return Ok(provider);
-                }
-                Err(e) => {
-                    eprintln!("RPC provider {} failed health check: {:?}", rpc_url, e);
-                }
-            }
-        }
-    }
-    Err("All Starknet RPC providers failed or returned incompatible responses".to_string())
-}
-
-async fn get_oracle_account<P: Provider + Send + Sync + 'static>(
-    provider: P,
-) -> Result<SingleOwnerAccount<P, LocalWallet>, String> {
-    let account_address = std::env::var("ORACLE_ACCOUNT_ADDRESS")
-        .map_err(|_| "ORACLE_ACCOUNT_ADDRESS not set".to_string())?;
-    let private_key = std::env::var("ORACLE_PRIVATE_KEY")
-        .map_err(|_| "ORACLE_PRIVATE_KEY not set".to_string())?;
-
-    let address = FieldElement::from_hex_be(&account_address)
-        .map_err(|e| format!("Invalid account address: {e}"))?;
-    let signer = LocalWallet::from_signing_key(SigningKey::from_secret_scalar(
-        FieldElement::from_hex_be(&private_key).map_err(|e| format!("Invalid private key: {e}"))?,
-    ));
-
-    // Hardcode Sepolia chain ID to avoid a potentially failing chain_id() call
-    let chain_id = FieldElement::from_hex_be("0x534e5f5345504f4c4941") // SN_SEPOLIA
-        .unwrap();
-
-    Ok(SingleOwnerAccount::new(
-        provider,
-        signer,
-        address,
-        chain_id,
-        ExecutionEncoding::New,
-    ))
-}
 
 async fn manual_rpc_call(
     method: &str,
@@ -207,6 +149,7 @@ async fn manual_rpc_call(
         std::env::var("ORACLE_RPC_URL").unwrap_or_else(|_| "https://free-rpc.nethermind.io/sepolia-juno".to_string()),
         "https://starknet-sepolia.public.blastapi.io".to_string(),
         "https://starknet-sepolia-rpc.publicnode.com".to_string(),
+        "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_6/ckCaCOPs1z8MLhPX4-hgd".to_string(),
     ];
 
     let client = reqwest::Client::new();
@@ -250,53 +193,97 @@ async fn execute_oracle_call(
     let contract_felt = FieldElement::from_hex_be(&contract_address)
         .map_err(|e| format!("Invalid contract address: {e}"))?;
 
-    println!("Executing {} on contract {}", entrypoint, contract_address);
-    let provider = get_starknet_provider().await?;
-    let account = get_oracle_account(provider).await?;
-
-    let execution = account.execute(vec![Call {
-        to: contract_felt,
-        selector: get_selector_from_name(entrypoint).unwrap(),
-        calldata,
-    }]);
+    println!("Preparing {} on contract {}", entrypoint, contract_address);
     
-    match execution.send().await {
-        Ok(result) => {
-            println!("{} submitted! Hash: {:#x}. Waiting for confirmation...", entrypoint, result.transaction_hash);
-            
-            // Wait loop
-            for _ in 0..15 {
-                tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
-                let status_res = manual_rpc_call("starknet_getTransactionStatus", serde_json::json!([
-                    format!("{:#x}", result.transaction_hash)
-                ])).await;
-                
-                if let Ok(status) = status_res {
-                    let finality = status.get("finality_status").and_then(|v| v.as_str()).unwrap_or("");
-                    let execution = status.get("execution_status").and_then(|v| v.as_str()).unwrap_or("");
-                    println!("TX {:#x} status: {}/{}", result.transaction_hash, finality, execution);
-                    
-                    if execution == "SUCCEEDED" || finality == "ACCEPTED_ON_L2" {
-                        return Ok(format!("{:#x}", result.transaction_hash));
-                    }
-                    if execution == "REJECTED" {
-                        return Err(format!("Transaction rejected: {:#x}", result.transaction_hash));
-                    }
-                }
-            }
-            Ok(format!("{:#x}", result.transaction_hash))
+    let account_address_str = std::env::var("ORACLE_ACCOUNT_ADDRESS")
+        .map_err(|_| "ORACLE_ACCOUNT_ADDRESS not set".to_string())?;
+    let account_address = FieldElement::from_hex_be(&account_address_str)
+        .map_err(|e| format!("Invalid account address: {e}"))?;
+    
+    let private_key_str = std::env::var("ORACLE_PRIVATE_KEY")
+        .map_err(|_| "ORACLE_PRIVATE_KEY not set".to_string())?;
+    let private_key = FieldElement::from_hex_be(&private_key_str)
+        .map_err(|e| format!("Invalid private key: {e}"))?;
+    let signing_key = SigningKey::from_secret_scalar(private_key);
+
+    // 1. Get Nonce
+    let nonce_res = manual_rpc_call("starknet_getNonce", serde_json::json!(["latest", format!("{:#x}", account_address)])).await?;
+    let nonce_str = nonce_res.as_str().ok_or("Nonce result not a string")?;
+    let nonce = FieldElement::from_hex_be(nonce_str).map_err(|e| format!("Invalid nonce: {e}"))?;
+    println!("Fetched nonce: {:#x}", nonce);
+
+    // 2. Prepare Calldata
+    // For a standard OpenZeppelin/Argent account, execute(to, selector, calldata)
+    // Multicall format: [calls_len, to, selector, data_len, data...]
+    let mut account_calldata = vec![
+        FieldElement::ONE, // 1 call
+        contract_felt,
+        get_selector_from_name(entrypoint).unwrap(),
+        FieldElement::from(calldata.len() as u64),
+    ];
+    account_calldata.extend(calldata);
+
+    // 3. Calculate Transaction Hash
+    let chain_id = FieldElement::from_hex_be("0x534e5f5345504f4c4941").unwrap(); // SN_SEPOLIA
+    let max_fee = FieldElement::from_hex_be("0x10000000000000").unwrap(); // 0.00004 ETH
+    
+    // Hash elements for Invoke V1
+    let calldata_hash = starknet::core::crypto::compute_hash_on_elements(&account_calldata);
+    let tx_hash = starknet::core::crypto::compute_hash_on_elements(&[
+        FieldElement::from_byte_slice_be(b"invoke").unwrap(),
+        FieldElement::ONE, // version 1
+        account_address,
+        FieldElement::ZERO, // entry_point_selector (0 for V1)
+        calldata_hash,
+        max_fee,
+        chain_id,
+        nonce,
+    ]);
+
+    // 4. Sign
+    let signature = signing_key.sign(&tx_hash).map_err(|e| format!("Signing failed: {e}"))?;
+    
+    // 5. Submit manually
+    let submission_params = serde_json::json!({
+        "invoke_transaction": {
+            "type": "INVOKE",
+            "version": "0x1",
+            "max_fee": format!("{:#x}", max_fee),
+            "signature": [format!("{:#x}", signature.r), format!("{:#x}", signature.s)],
+            "nonce": format!("{:#x}", nonce),
+            "sender_address": format!("{:#x}", account_address),
+            "calldata": account_calldata.iter().map(|f| format!("{:#x}", f)).collect::<Vec<_>>()
         }
-        Err(e) => {
-            let err_str = format!("{:?}", e);
-            if err_str.contains("JsonRpcResponse") {
-                println!("Detected library parsing error. Transaction live state is unknown. Returning error to force user to funded.");
-                return Err("RPC Parsing Error: Transaction response format incompatible. Check wallet for latest TXs.".to_string());
+    });
+
+    println!("Submitting manually to bypass library parsing bugs...");
+    let result = manual_rpc_call("starknet_addInvokeTransaction", submission_params).await?;
+    
+    let tx_hash_str = result.get("transaction_hash").and_then(|v| v.as_str()).ok_or("Result missing transaction_hash")?;
+    let final_tx_hash = FieldElement::from_hex_be(tx_hash_str).map_err(|e| format!("Invalid tx hash in response: {e}"))?;
+    
+    println!("{} submitted manually! Hash: {:#x}. Waiting for confirmation...", entrypoint, final_tx_hash);
+    
+    // 6. Confirmation Loop
+    for _ in 0..15 {
+        tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
+        let status_res = manual_rpc_call("starknet_getTransactionStatus", serde_json::json!([tx_hash_str])).await;
+        
+        if let Ok(status) = status_res {
+            let execution = status.get("execution_status").and_then(|v| v.as_str()).unwrap_or("");
+            let finality = status.get("finality_status").and_then(|v| v.as_str()).unwrap_or("");
+            println!("TX {} status: {}/{}", tx_hash_str, finality, execution);
+            
+            if execution == "SUCCEEDED" || finality == "ACCEPTED_ON_L2" {
+                return Ok(tx_hash_str.to_string());
             }
-            let err_msg = format!("{entrypoint} execution failed: {}", err_str);
-            eprintln!("{}", err_msg);
-            Err(err_msg)
+            if execution == "REJECTED" {
+                return Err(format!("Transaction rejected: {}", tx_hash_str));
+            }
         }
     }
+
+    Ok(tx_hash_str.to_string())
 }
 
 async fn invoke_submit_proof(project_id: u64, proof_hash: &str, otp_token: &str) -> Result<String, String> {

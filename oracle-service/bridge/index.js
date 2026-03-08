@@ -31,6 +31,23 @@ function padResourceBounds(resourceBounds, numerator = 3, denominator = 2) {
     };
 }
 
+function zeroResourceBounds() {
+    return {
+        l1_gas: {
+            max_amount: "0x0",
+            max_price_per_unit: "0x0",
+        },
+        l2_gas: {
+            max_amount: "0x0",
+            max_price_per_unit: "0x0",
+        },
+        l1_data_gas: {
+            max_amount: "0x0",
+            max_price_per_unit: "0x0",
+        },
+    };
+}
+
 async function resolveSupportedBlockTag(provider, accountAddress) {
     try {
         await provider.getNonceForAddress(accountAddress, "pending");
@@ -85,6 +102,7 @@ async function main() {
             nonce,
             blockIdentifier: blockTag,
             skipValidate: false,
+            resourceBounds: zeroResourceBounds(),
         });
         const resourceBounds = padResourceBounds(estimate.resourceBounds);
         console.log("Estimated V3 bounds:", JSON.stringify(estimate.resourceBounds));

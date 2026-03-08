@@ -199,6 +199,48 @@ async fn get_oracle_account<P: Provider + Send + Sync + 'static>(
     ))
 }
 
+async fn manual_rpc_call(
+    method: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let urls = vec![
+        std::env::var("ORACLE_RPC_URL").unwrap_or_else(|_| "https://free-rpc.nethermind.io/sepolia-juno".to_string()),
+        "https://starknet-sepolia.public.blastapi.io".to_string(),
+        "https://starknet-sepolia-rpc.publicnode.com".to_string(),
+    ];
+
+    let client = reqwest::Client::new();
+    for rpc_url in urls {
+        let request_body = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": method,
+            "params": params
+        });
+
+        match client.post(&rpc_url).json(&request_body).send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                if !status.is_success() { continue; }
+                let text = resp.text().await.unwrap_or_default();
+                match serde_json::from_str::<serde_json::Value>(&text) {
+                    Ok(json) => {
+                        if let Some(err) = json.get("error") {
+                            return Err(format!("RPC Error: {}", err));
+                        }
+                        if let Some(result) = json.get("result") {
+                            return Ok(result.clone());
+                        }
+                    }
+                    Err(_) => continue,
+                }
+            }
+            Err(_) => continue,
+        }
+    }
+    Err("All RPC providers failed manual call".to_string())
+}
+
 async fn execute_oracle_call(
     entrypoint: &str,
     calldata: Vec<FieldElement>,
@@ -218,16 +260,52 @@ async fn execute_oracle_call(
         calldata,
     }]);
     
+    // Check balance first to avoid silent failing
+    let balance_res = manual_rpc_call("starknet_getStorageAt", serde_json::json!([
+        "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7", // ETH address
+        format!("{:#x}", account.address()),
+        "latest"
+    ])).await;
+    
+    if let Ok(balance_hex) = balance_res {
+        if balance_hex == "0x0" {
+            let msg = format!("Oracle account {:#x} has 0 ETH balance. Please fund it.", account.address());
+            eprintln!("{}", msg);
+            return Err(msg);
+        }
+    }
+
     match execution.send().await {
         Ok(result) => {
-            println!("{} success! TX Hash: {:#x}", entrypoint, result.transaction_hash);
+            println!("{} submitted! Hash: {:#x}. Waiting for confirmation...", entrypoint, result.transaction_hash);
+            
+            // Wait loop
+            for _ in 0..15 {
+                tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
+                let status_res = manual_rpc_call("starknet_getTransactionStatus", serde_json::json!([
+                    format!("{:#x}", result.transaction_hash)
+                ])).await;
+                
+                if let Ok(status) = status_res {
+                    let finality = status.get("finality_status").and_then(|v| v.as_str()).unwrap_or("");
+                    let execution = status.get("execution_status").and_then(|v| v.as_str()).unwrap_or("");
+                    println!("TX {:#x} status: {}/{}", result.transaction_hash, finality, execution);
+                    
+                    if execution == "SUCCEEDED" || finality == "ACCEPTED_ON_L2" {
+                        return Ok(format!("{:#x}", result.transaction_hash));
+                    }
+                    if execution == "REJECTED" {
+                        return Err(format!("Transaction rejected: {:#x}", result.transaction_hash));
+                    }
+                }
+            }
             Ok(format!("{:#x}", result.transaction_hash))
         }
         Err(e) => {
             let err_str = format!("{:?}", e);
             if err_str.contains("JsonRpcResponse") {
-                println!("Detected library parsing error. The transaction was likely accepted by the node but the response format is new.");
-                return Ok("Sent (Hash hidden due to incompatible RPC response format)".to_string());
+                println!("Detected library parsing error. Transaction live state is unknown. Returning error to force user to funded.");
+                return Err("RPC Parsing Error: Transaction response format incompatible. Check wallet for latest TXs.".to_string());
             }
             let err_msg = format!("{entrypoint} execution failed: {}", err_str);
             eprintln!("{}", err_msg);

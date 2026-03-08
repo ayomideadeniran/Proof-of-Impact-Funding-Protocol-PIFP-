@@ -9,6 +9,10 @@ mkdir -p "$BIN_DIR"
 mkdir -p "$CARGO_INSTALL_ROOT"
 export PATH="$BIN_DIR:$CARGO_INSTALL_ROOT/bin:$PATH"
 
+pushd "$ROOT_DIR/bridge" >/dev/null
+npm install
+popd >/dev/null
+
 if ! command -v sncast >/dev/null 2>&1; then
   cargo install \
     --git https://github.com/foundry-rs/starknet-foundry.git \

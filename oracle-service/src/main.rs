@@ -56,13 +56,14 @@ async fn main() {
         .route("/issue-action-token", post(issue_action_token))
         .layer(CorsLayer::permissive());
 
-    let port = std::env::var("ORACLE_PORT")
+    let port = std::env::var("PORT")
+        .or_else(|_| std::env::var("ORACLE_PORT"))
         .ok()
         .and_then(|p| p.parse::<u16>().ok())
         .unwrap_or(3001);
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let addr = SocketAddr::from(([0, 0, 0, 0], port));
     println!("Oracle Service listening on {}", addr);
-    
+
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }

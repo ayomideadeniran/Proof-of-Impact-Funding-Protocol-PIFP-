@@ -19,7 +19,7 @@ async function main() {
         process.exit(1);
     }
 
-    const account = new Account(provider, accountAddress, privateKey);
+    const account = new Account(provider, accountAddress, privateKey, "1");
 
     console.log(`Executing ${entrypoint} on ${contractAddress} with calldata:`, calldata);
 

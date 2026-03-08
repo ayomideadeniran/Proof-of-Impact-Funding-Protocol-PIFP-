@@ -147,13 +147,13 @@ use starknet::{
 use url::Url;
 
 async fn get_starknet_provider() -> Result<JsonRpcClient<HttpTransport>, String> {
-    let primary_rpc = std::env::var("ORACLE_RPC_URL")
-        .unwrap_or_else(|_| "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_6/ckCaCOPs1z8MLhPX4-hgd".to_string());
-    let fallback_rpc = std::env::var("ORACLE_RPC_URL_FALLBACK")
-        .unwrap_or_else(|_| "https://starknet-sepolia-rpc.publicnode.com".to_string());
-    let third_rpc = "https://starknet-sepolia.public.blastapi.io".to_string();
+    let urls = vec![
+        std::env::var("ORACLE_RPC_URL").unwrap_or_else(|_| "https://free-rpc.nethermind.io/sepolia-juno".to_string()),
+        "https://starknet-sepolia.public.blastapi.io".to_string(),
+        "https://starknet-sepolia-rpc.publicnode.com".to_string(),
+        "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_6/ckCaCOPs1z8MLhPX4-hgd".to_string(),
+    ];
 
-    let urls = vec![primary_rpc, fallback_rpc, third_rpc];
     for rpc_url in urls {
         println!("Testing RPC provider: {}", rpc_url);
         if let Ok(url) = Url::parse(&rpc_url) {
@@ -169,7 +169,7 @@ async fn get_starknet_provider() -> Result<JsonRpcClient<HttpTransport>, String>
             }
         }
     }
-    Err("All Starknet RPC providers failed".to_string())
+    Err("All Starknet RPC providers failed or returned incompatible responses".to_string())
 }
 
 async fn get_oracle_account<P: Provider + Send + Sync + 'static>(
@@ -186,17 +186,16 @@ async fn get_oracle_account<P: Provider + Send + Sync + 'static>(
         FieldElement::from_hex_be(&private_key).map_err(|e| format!("Invalid private key: {e}"))?,
     ));
 
-    let chain_id = provider
-        .chain_id()
-        .await
-        .map_err(|e| format!("Failed to get chain ID: {e}"))?;
+    // Hardcode Sepolia chain ID to avoid a potentially failing chain_id() call
+    let chain_id = FieldElement::from_hex_be("0x534e5f5345504f4c4941") // SN_SEPOLIA
+        .unwrap();
 
     Ok(SingleOwnerAccount::new(
         provider,
         signer,
         address,
         chain_id,
-        ExecutionEncoding::New,
+        ExecutionEncoding::Legacy,
     ))
 }
 

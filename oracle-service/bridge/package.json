@@ -1,0 +1,9 @@
+{
+  "name": "starknet-bridge",
+  "version": "1.0.0",
+  "description": "Bridge for sending V3 transactions from Rust",
+  "main": "index.js",
+  "dependencies": {
+    "starknet": "^6.11.0"
+  }
+}

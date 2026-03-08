@@ -132,56 +132,9 @@ fn normalize_hash(hash: &str) -> Result<String, String> {
     Ok(format!("0x{}", no_prefix.to_lowercase()))
 }
 
-use starknet::{
-    core::{
-        types::FieldElement,
-        utils::get_selector_from_name,
-    },
-    signers::SigningKey,
-};
+use starknet::core::types::FieldElement;
 
-async fn manual_rpc_call(
-    method: &str,
-    params: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    let urls = vec![
-        std::env::var("ORACLE_RPC_URL").unwrap_or_else(|_| "https://free-rpc.nethermind.io/sepolia-juno".to_string()),
-        "https://starknet-sepolia.public.blastapi.io".to_string(),
-        "https://starknet-sepolia-rpc.publicnode.com".to_string(),
-        "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_6/ckCaCOPs1z8MLhPX4-hgd".to_string(),
-    ];
-
-    let client = reqwest::Client::new();
-    for rpc_url in urls {
-        let request_body = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": method,
-            "params": params
-        });
-
-        match client.post(&rpc_url).json(&request_body).send().await {
-            Ok(resp) => {
-                let status = resp.status();
-                if !status.is_success() { continue; }
-                let text = resp.text().await.unwrap_or_default();
-                match serde_json::from_str::<serde_json::Value>(&text) {
-                    Ok(json) => {
-                        if let Some(err) = json.get("error") {
-                            return Err(format!("RPC Error: {}", err));
-                        }
-                        if let Some(result) = json.get("result") {
-                            return Ok(result.clone());
-                        }
-                    }
-                    Err(_) => continue,
-                }
-            }
-            Err(_) => continue,
-        }
-    }
-    Err("All RPC providers failed manual call".to_string())
-}
+use tokio::process::Command;
 
 async fn execute_oracle_call(
     entrypoint: &str,
@@ -189,101 +142,41 @@ async fn execute_oracle_call(
 ) -> Result<String, String> {
     let contract_address = std::env::var("ORACLE_PIFP_CONTRACT_ADDRESS")
         .map_err(|_| "ORACLE_PIFP_CONTRACT_ADDRESS not set".to_string())?;
-    let contract_felt = FieldElement::from_hex_be(&contract_address)
-        .map_err(|e| format!("Invalid contract address: {e}"))?;
 
-    println!("Preparing {} on contract {}", entrypoint, contract_address);
+    println!("Executing {} via Node.js bridge on contract {}", entrypoint, contract_address);
     
-    let account_address_str = std::env::var("ORACLE_ACCOUNT_ADDRESS")
-        .map_err(|_| "ORACLE_ACCOUNT_ADDRESS not set".to_string())?;
-    let account_address = FieldElement::from_hex_be(&account_address_str)
-        .map_err(|e| format!("Invalid account address: {e}"))?;
+    let calldata_strings: Vec<String> = calldata.iter().map(|f| format!("{:#x}", f)).collect();
     
-    let private_key_str = std::env::var("ORACLE_PRIVATE_KEY")
-        .map_err(|_| "ORACLE_PRIVATE_KEY not set".to_string())?;
-    let private_key = FieldElement::from_hex_be(&private_key_str)
-        .map_err(|e| format!("Invalid private key: {e}"))?;
-    let signing_key = SigningKey::from_secret_scalar(private_key);
+    // Call the Node.js bridge
+    let output = Command::new("node")
+        .arg("bridge/index.js")
+        .arg(entrypoint)
+        .args(&calldata_strings)
+        .envs(std::env::vars()) // Forward env variables (ORACLE_*, etc.)
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn node bridge: {e}"))?;
 
-    // 1. Get Nonce
-    let nonce_res = manual_rpc_call("starknet_getNonce", serde_json::json!(["latest", format!("{:#x}", account_address)])).await?;
-    let nonce_str = nonce_res.as_str().ok_or("Nonce result not a string")?;
-    let nonce = FieldElement::from_hex_be(nonce_str).map_err(|e| format!("Invalid nonce: {e}"))?;
-    println!("Fetched nonce: {:#x}", nonce);
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
 
-    // 2. Prepare Calldata
-    // For a standard OpenZeppelin/Argent account, execute(to, selector, calldata)
-    // Multicall format: [calls_len, to, selector, data_len, data...]
-    let mut account_calldata = vec![
-        FieldElement::ONE, // 1 call
-        contract_felt,
-        get_selector_from_name(entrypoint).unwrap(),
-        FieldElement::from(calldata.len() as u64),
-    ];
-    account_calldata.extend(calldata);
-
-    // 3. Calculate Transaction Hash
-    let chain_id = FieldElement::from_hex_be("0x534e5f5345504f4c4941").unwrap(); // SN_SEPOLIA
-    let max_fee = FieldElement::from_hex_be("0x10000000000000").unwrap(); // 0.00004 ETH
-    
-    // Hash elements for Invoke V1
-    let calldata_hash = starknet::core::crypto::compute_hash_on_elements(&account_calldata);
-    let tx_hash = starknet::core::crypto::compute_hash_on_elements(&[
-        FieldElement::from_byte_slice_be(b"invoke").unwrap(),
-        FieldElement::ONE, // version 1
-        account_address,
-        FieldElement::ZERO, // entry_point_selector (0 for V1)
-        calldata_hash,
-        max_fee,
-        chain_id,
-        nonce,
-    ]);
-
-    // 4. Sign
-    let signature = signing_key.sign(&tx_hash).map_err(|e| format!("Signing failed: {e}"))?;
-    
-    // 5. Submit manually
-    let submission_params = serde_json::json!({
-        "invoke_transaction": {
-            "type": "INVOKE",
-            "version": "0x1",
-            "max_fee": format!("{:#x}", max_fee),
-            "signature": [format!("{:#x}", signature.r), format!("{:#x}", signature.s)],
-            "nonce": format!("{:#x}", nonce),
-            "sender_address": format!("{:#x}", account_address),
-            "calldata": account_calldata.iter().map(|f| format!("{:#x}", f)).collect::<Vec<_>>()
-        }
-    });
-
-    println!("Submitting manually to bypass library parsing bugs...");
-    let result = manual_rpc_call("starknet_addInvokeTransaction", submission_params).await?;
-    
-    let tx_hash_str = result.get("transaction_hash").and_then(|v| v.as_str()).ok_or("Result missing transaction_hash")?;
-    let final_tx_hash = FieldElement::from_hex_be(tx_hash_str).map_err(|e| format!("Invalid tx hash in response: {e}"))?;
-    
-    println!("{} submitted manually! Hash: {:#x}. Waiting for confirmation...", entrypoint, final_tx_hash);
-    
-    // 6. Confirmation Loop
-    for _ in 0..15 {
-        tokio::time::sleep(tokio::time::Duration::from_secs(4)).await;
-        let status_res = manual_rpc_call("starknet_getTransactionStatus", serde_json::json!([tx_hash_str])).await;
-        
-        if let Ok(status) = status_res {
-            let execution = status.get("execution_status").and_then(|v| v.as_str()).unwrap_or("");
-            let finality = status.get("finality_status").and_then(|v| v.as_str()).unwrap_or("");
-            println!("TX {} status: {}/{}", tx_hash_str, finality, execution);
-            
-            if execution == "SUCCEEDED" || finality == "ACCEPTED_ON_L2" {
-                return Ok(tx_hash_str.to_string());
-            }
-            if execution == "REJECTED" {
-                return Err(format!("Transaction rejected: {}", tx_hash_str));
+    if output.status.success() {
+        // The last line of stdout should be the transaction hash
+        if let Some(tx_hash) = stdout.lines().last().map(|s| s.trim().to_string()) {
+            if tx_hash.starts_with("0x") {
+                println!("Bridge success! TX Hash: {}", tx_hash);
+                return Ok(tx_hash);
             }
         }
+        println!("Bridge claimed success but no hash found in stdout: {}", stdout);
+        return Ok(stdout); 
     }
 
-    Ok(tx_hash_str.to_string())
+    let err_msg = format!("Bridge failed for {}: {}\n{}", entrypoint, stderr, stdout);
+    eprintln!("{}", err_msg);
+    Err(err_msg)
 }
+
 
 async fn invoke_submit_proof(project_id: u64, proof_hash: &str, otp_token: &str) -> Result<String, String> {
     let hash_felt = FieldElement::from_hex_be(proof_hash)

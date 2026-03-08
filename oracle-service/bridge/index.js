@@ -34,12 +34,13 @@ async function main() {
         try {
             console.log("Estimating fee (V3)...");
             // Attempt auto-estimation first for cost efficiency
+            // Note: If this fails with "missing field: l1_data_gas", it's a library/node mismatch
             const estimate = await account.estimateInvokeFee(
                 [{ contractAddress, entrypoint, calldata }],
                 { version: 3, nonce, blockIdentifier: "latest" }
             );
 
-            // Apply a 50% buffer to the estimate
+            // Apply a buffer to the estimate
             const gasPrice = BigInt(estimate.gas_price || estimate.resource_bounds?.l1_gas?.max_price_per_unit || "0x3b9aca00"); // Default 1 Gwei
             const gasAmount = BigInt(estimate.gas_consumed || estimate.resource_bounds?.l1_gas?.max_amount || "0x186a0"); // Default 100k
 
@@ -54,9 +55,12 @@ async function main() {
             console.log("Estimation success. Bounds:", JSON.stringify(resourceBounds));
         } catch (e) {
             console.warn("Estimation failed, using robust fallback bounds:", e.message);
-            // Bypasses "missing field: l1_data_gas" or "Invalid block id" during estimation
+            // These bounds total ~0.0004 ETH, fitting comfortably in 0.002 ETH balance
             resourceBounds = {
-                l1_gas: { max_amount: "0x7a120", max_price_per_unit: "0x4a817c800" }, // 500k gas, 20 Gwei
+                l1_gas: { 
+                    max_amount: "0x186a0",         // 100,000 gas (ample for simple invoke)
+                    max_price_per_unit: "0xee6b2800" // 4 Gwei (fits standard Sepolia prices)
+                },
                 l2_gas: { max_amount: "0x0", max_price_per_unit: "0x0" },
                 l1_data_gas: { max_amount: "0x0", max_price_per_unit: "0x0" }
             };

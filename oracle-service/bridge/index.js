@@ -29,42 +29,22 @@ async function main() {
         const nonce = await provider.getNonceForAddress(accountAddress, "latest");
         console.log(`Using nonce: ${nonce}`);
 
-        // 2. Resource Bounds Strategy
-        let resourceBounds;
-        try {
-            console.log("Estimating fee (V3)...");
-            // Attempt auto-estimation first for cost efficiency
-            // Note: If this fails with "missing field: l1_data_gas", it's a library/node mismatch
-            const estimate = await account.estimateInvokeFee(
-                [{ contractAddress, entrypoint, calldata }],
-                { version: 3, nonce, blockIdentifier: "latest" }
-            );
+        // 2. Resource Bounds (Bypassing failing auto-estimation for V3)
+        // Sepolia requires non-zero l1_data_gas and a competitive l1_gas price.
+        // Total max fee: (100k + 1k) * 10 Gwei = 0.00101 ETH (safe within 0.002 ETH balance)
+        const resourceBounds = {
+            l1_gas: { 
+                max_amount: "0x186a0",         // 100,000 gas 
+                max_price_per_unit: "0x2540be400" // 10 Gwei (very safe for Sepolia)
+            },
+            l2_gas: { max_amount: "0x0", max_price_per_unit: "0x0" },
+            l1_data_gas: { 
+                max_amount: "0x3e8",           // 1,000 gas
+                max_price_per_unit: "0x2540be400" // 10 Gwei
+            }
+        };
 
-            // Apply a buffer to the estimate
-            const gasPrice = BigInt(estimate.gas_price || estimate.resource_bounds?.l1_gas?.max_price_per_unit || "0x3b9aca00"); // Default 1 Gwei
-            const gasAmount = BigInt(estimate.gas_consumed || estimate.resource_bounds?.l1_gas?.max_amount || "0x186a0"); // Default 100k
-
-            resourceBounds = {
-                l1_gas: {
-                    max_amount: "0x" + (gasAmount * 2n).toString(16),
-                    max_price_per_unit: "0x" + (gasPrice * 2n).toString(16)
-                },
-                l2_gas: { max_amount: "0x0", max_price_per_unit: "0x0" },
-                l1_data_gas: { max_amount: "0x0", max_price_per_unit: "0x0" }
-            };
-            console.log("Estimation success. Bounds:", JSON.stringify(resourceBounds));
-        } catch (e) {
-            console.warn("Estimation failed, using robust fallback bounds:", e.message);
-            // These bounds total ~0.0004 ETH, fitting comfortably in 0.002 ETH balance
-            resourceBounds = {
-                l1_gas: { 
-                    max_amount: "0x186a0",         // 100,000 gas (ample for simple invoke)
-                    max_price_per_unit: "0xee6b2800" // 4 Gwei (fits standard Sepolia prices)
-                },
-                l2_gas: { max_amount: "0x0", max_price_per_unit: "0x0" },
-                l1_data_gas: { max_amount: "0x0", max_price_per_unit: "0x0" }
-            };
-        }
+        console.log("Using robust V3 bounds:", JSON.stringify(resourceBounds));
 
         // 3. Execute
         const { transaction_hash } = await account.execute(

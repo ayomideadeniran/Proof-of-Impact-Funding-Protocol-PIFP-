@@ -48,6 +48,10 @@ function zeroResourceBounds() {
     };
 }
 
+function isInvalidSignatureError(message) {
+    return message.includes("Account: invalid signature");
+}
+
 async function resolveSupportedBlockTag(provider, accountAddress) {
     try {
         await provider.getNonceForAddress(accountAddress, "pending");
@@ -115,7 +119,11 @@ async function main() {
             resourceBounds = padResourceBounds(estimate.resourceBounds);
             console.log("Estimation success. Using padded V3 bounds:", JSON.stringify(resourceBounds));
         } catch (e) {
-            console.warn("Estimation failed, using robust fallback bounds:", e.message);
+            const message = e?.message || String(e);
+            if (isInvalidSignatureError(message)) {
+                throw new Error(`Signer validation failed during fee estimation: ${message}`);
+            }
+            console.warn("Estimation failed, using robust fallback bounds:", message);
             // Definitively resolve "missing field: l1_data_gas" and "Error 53" (minimal fee)
             // Total max fee: (500k + 10k) * 2 Gwei ≈ 0.001 ETH (Safe for 0.002 ETH balance)
             resourceBounds = {
@@ -163,7 +171,7 @@ async function main() {
         if (message.includes("fetch failed")) {
             console.error(`Bridge diagnosis: ORACLE_RPC_URL is unreachable or invalid: ${rpcUrl}`);
         }
-        if (message.includes("Account: invalid signature")) {
+        if (isInvalidSignatureError(message)) {
             console.error("Bridge diagnosis: ORACLE_ACCOUNT_ADDRESS and ORACLE_PRIVATE_KEY do not match this Starknet account, or the account type requires a different signer setup.");
         }
         process.exit(1);

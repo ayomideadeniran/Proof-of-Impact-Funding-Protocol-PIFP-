@@ -47,6 +47,7 @@ async fn main() {
 
     // Define routes
     let app = Router::new()
+        .route("/", get(health_check))
         .route("/health", get(health_check))
         .route("/wallet-profile", get(wallet_profile))
         .route("/hash-proof", post(hash_proof))

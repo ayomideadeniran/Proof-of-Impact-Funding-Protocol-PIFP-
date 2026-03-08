@@ -53,8 +53,12 @@ async function resolveSupportedBlockTag(provider, accountAddress) {
         await provider.getNonceForAddress(accountAddress, "pending");
         return "pending";
     } catch (error) {
-        console.warn(`Pending block tag unsupported, falling back to latest: ${error.message}`);
-        return "latest";
+        const message = error?.message || String(error);
+        if (message.includes("Invalid block id")) {
+            console.warn(`Pending block tag unsupported, falling back to latest: ${message}`);
+            return "latest";
+        }
+        throw new Error(`RPC connectivity check failed while probing pending nonce: ${message}`);
     }
 }
 
@@ -68,12 +72,13 @@ async function main() {
     }
 
     const provider = new RpcProvider({ nodeUrl: process.env.ORACLE_RPC_URL });
+    const rpcUrl = process.env.ORACLE_RPC_URL;
     const accountAddress = process.env.ORACLE_ACCOUNT_ADDRESS;
     const privateKey = process.env.ORACLE_PRIVATE_KEY;
     const contractAddress = process.env.ORACLE_PIFP_CONTRACT_ADDRESS;
 
-    if (!accountAddress || !privateKey || !contractAddress) {
-        console.error("Missing environment variables (ORACLE_ACCOUNT_ADDRESS, ORACLE_PRIVATE_KEY, ORACLE_PIFP_CONTRACT_ADDRESS)");
+    if (!rpcUrl || !accountAddress || !privateKey || !contractAddress) {
+        console.error("Missing environment variables (ORACLE_RPC_URL, ORACLE_ACCOUNT_ADDRESS, ORACLE_PRIVATE_KEY, ORACLE_PIFP_CONTRACT_ADDRESS)");
         process.exit(1);
     }
 
@@ -155,6 +160,9 @@ async function main() {
     } catch (error) {
         const message = error?.message || String(error);
         console.error("Execution failed:", message);
+        if (message.includes("fetch failed")) {
+            console.error(`Bridge diagnosis: ORACLE_RPC_URL is unreachable or invalid: ${rpcUrl}`);
+        }
         if (message.includes("Account: invalid signature")) {
             console.error("Bridge diagnosis: ORACLE_ACCOUNT_ADDRESS and ORACLE_PRIVATE_KEY do not match this Starknet account, or the account type requires a different signer setup.");
         }

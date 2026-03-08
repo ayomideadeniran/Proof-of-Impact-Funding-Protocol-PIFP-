@@ -8,6 +8,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
+use std::path::Path;
 use sha2::{Sha256, Digest};
 use tower_http::cors::CorsLayer;
 use once_cell::sync::Lazy;
@@ -38,10 +39,27 @@ static VERIFIED_OTP_STORE: Lazy<RwLock<HashMap<String, VerifiedOtpEntry>>> =
 static WALLET_EMAIL_STORE: Lazy<RwLock<HashMap<String, String>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
+fn load_env_file() {
+    if let Ok(env_file) = std::env::var("ORACLE_ENV_FILE") {
+        dotenv::from_path(&env_file).ok();
+        println!("Loaded oracle env from {}", env_file);
+        return;
+    }
+
+    if Path::new(".env.local").exists() {
+        dotenv::from_filename(".env.local").ok();
+        println!("Loaded oracle env from .env.local");
+        return;
+    }
+
+    dotenv::dotenv().ok();
+    println!("Loaded oracle env from .env");
+}
+
 #[tokio::main]
 async fn main() {
     // Load env (optional)
-    dotenv::dotenv().ok();
+    load_env_file();
     load_wallet_email_store().await;
 
     // Define routes

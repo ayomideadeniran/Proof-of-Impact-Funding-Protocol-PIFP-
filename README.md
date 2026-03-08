@@ -218,6 +218,41 @@ It replaces trust-based funding with cryptographic accountability.
 * Project description (≤500 words)
 * Starknet wallet address
 
+## 15. Local Oracle Testing
+
+To test the oracle service locally without touching the deployed setup, run it with a separate local env file.
+
+The Rust service now loads env in this order:
+
+1. `ORACLE_ENV_FILE` if set
+2. `.env.local` if present
+3. `.env`
+
+Use a local-only file such as `oracle-service/.env.local` with a separate test RPC, test account, and test contract:
+
+```env
+ORACLE_RPC_URL=https://your-testnet-rpc
+ORACLE_ACCOUNT_ADDRESS=0x...
+ORACLE_PRIVATE_KEY=0x...
+ORACLE_PIFP_CONTRACT_ADDRESS=0x...
+ORACLE_CALLER_ADDRESS=0x...
+PORT=3001
+```
+
+Run locally from the `oracle-service` directory:
+
+```bash
+cargo run
+```
+
+Or force a specific file:
+
+```bash
+ORACLE_ENV_FILE=.env.local cargo run
+```
+
+If the bridge logs `Account: invalid signature`, the issue is not the deployed contract. It means the local `ORACLE_PRIVATE_KEY` does not control `ORACLE_ACCOUNT_ADDRESS`, or that account uses a signer setup this bridge does not support.
+
 ---
 
 ## 15. Conclusion

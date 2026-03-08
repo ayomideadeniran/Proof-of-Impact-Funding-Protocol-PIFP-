@@ -96,17 +96,36 @@ async function main() {
             entrypoint,
             calldata,
         };
-        console.log("Estimating V3 fee with validation enabled...");
-        const estimate = await account.estimateInvokeFee(call, {
-            version: constants.TRANSACTION_VERSION.V3,
-            nonce,
-            blockIdentifier: blockTag,
-            skipValidate: false,
-            resourceBounds: zeroResourceBounds(),
-        });
-        const resourceBounds = padResourceBounds(estimate.resourceBounds);
-        console.log("Estimated V3 bounds:", JSON.stringify(estimate.resourceBounds));
-        console.log("Using padded V3 bounds:", JSON.stringify(resourceBounds));
+        // 2. Resource Bounds Strategy
+        let resourceBounds;
+        try {
+            console.log("Estimating V3 fee with validation enabled...");
+            const estimate = await account.estimateInvokeFee(call, {
+                version: constants.TRANSACTION_VERSION.V3,
+                nonce,
+                blockIdentifier: blockTag,
+                skipValidate: false,
+                resourceBounds: zeroResourceBounds(),
+            });
+            resourceBounds = padResourceBounds(estimate.resourceBounds);
+            console.log("Estimation success. Using padded V3 bounds:", JSON.stringify(resourceBounds));
+        } catch (e) {
+            console.warn("Estimation failed, using robust fallback bounds:", e.message);
+            // Definitively resolve "missing field: l1_data_gas" and "Error 53" (minimal fee)
+            // Total max fee: (500k + 10k) * 2 Gwei ≈ 0.001 ETH (Safe for 0.002 ETH balance)
+            resourceBounds = {
+                l1_gas: { 
+                    max_amount: "0x7a120",         // 500,000 gas (covers Argent validation)
+                    max_price_per_unit: "0x77359400" // 2 Gwei
+                },
+                l2_gas: { max_amount: "0x0", max_price_per_unit: "0x0" },
+                l1_data_gas: { 
+                    max_amount: "0x2710",          // 10,000 gas (Mandatory non-zero)
+                    max_price_per_unit: "0x77359400" // 2 Gwei
+                }
+            };
+            console.log("Using Economy-Scale fallback bounds:", JSON.stringify(resourceBounds));
+        }
 
         // 3. Execute
         const { transaction_hash } = await account.execute(
@@ -134,7 +153,11 @@ async function main() {
             process.exit(1);
         }
     } catch (error) {
-        console.error("Execution failed:", error.message);
+        const message = error?.message || String(error);
+        console.error("Execution failed:", message);
+        if (message.includes("Account: invalid signature")) {
+            console.error("Bridge diagnosis: ORACLE_ACCOUNT_ADDRESS and ORACLE_PRIVATE_KEY do not match this Starknet account, or the account type requires a different signer setup.");
+        }
         process.exit(1);
     }
 }

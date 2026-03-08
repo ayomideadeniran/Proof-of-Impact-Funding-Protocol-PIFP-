@@ -1,5 +1,36 @@
 const { Account, RpcProvider, constants } = require("starknet");
 
+function hexToBigInt(value) {
+    return BigInt(value);
+}
+
+function toHex(value) {
+    return `0x${value.toString(16)}`;
+}
+
+function scaleHex(hexValue, numerator, denominator) {
+    const value = hexToBigInt(hexValue);
+    const scaled = (value * BigInt(numerator) + BigInt(denominator) - 1n) / BigInt(denominator);
+    return toHex(scaled);
+}
+
+function padResourceBounds(resourceBounds, numerator = 3, denominator = 2) {
+    return {
+        l1_gas: {
+            max_amount: scaleHex(resourceBounds.l1_gas.max_amount, numerator, denominator),
+            max_price_per_unit: scaleHex(resourceBounds.l1_gas.max_price_per_unit, numerator, denominator),
+        },
+        l2_gas: {
+            max_amount: scaleHex(resourceBounds.l2_gas.max_amount, numerator, denominator),
+            max_price_per_unit: scaleHex(resourceBounds.l2_gas.max_price_per_unit, numerator, denominator),
+        },
+        l1_data_gas: {
+            max_amount: scaleHex(resourceBounds.l1_data_gas.max_amount, numerator, denominator),
+            max_price_per_unit: scaleHex(resourceBounds.l1_data_gas.max_price_per_unit, numerator, denominator),
+        },
+    };
+}
+
 async function main() {
     const entrypoint = process.argv[2];
     const calldata = process.argv.slice(3);
@@ -24,39 +55,38 @@ async function main() {
     console.log(`Executing ${entrypoint} on ${contractAddress} with calldata:`, calldata);
 
     try {
-        // 1. Fetch Nonce
-        console.log("Fetching nonce (latest)...");
-        const nonce = await provider.getNonceForAddress(accountAddress, "latest");
+        // Estimate against pending state so fees/nonces reflect mempool conditions.
+        console.log("Fetching nonce (pending)...");
+        const nonce = await provider.getNonceForAddress(accountAddress, "pending");
         console.log(`Using nonce: ${nonce}`);
 
-        // 2. Resource Bounds (Economy-Scale V3 Strategy)
-        // High gas limit (500k) to cover complex Argent validation + execution
-        // Moderate gas price (2 Gwei) to ensure total max fee (~0.001 ETH) < account balance (0.002 ETH)
-        const resourceBounds = {
-            l1_gas: { 
-                max_amount: "0x7a120",         // 500,000 gas
-                max_price_per_unit: "0x77359400" // 2 Gwei (Current network is ~1 Gwei)
-            },
-            l2_gas: { max_amount: "0x0", max_price_per_unit: "0x0" },
-            l1_data_gas: { 
-                max_amount: "0x2710",          // 10,000 gas
-                max_price_per_unit: "0x77359400" // 2 Gwei
-            }
+        // Include validation in estimation; some account contracts need materially more
+        // validation resources than the library's skip-validate default would capture.
+        const call = {
+            contractAddress,
+            entrypoint,
+            calldata,
         };
-
-        console.log("Using Economy-Scale V3 bounds:", JSON.stringify(resourceBounds));
+        console.log("Estimating V3 fee with validation enabled...");
+        const estimate = await account.estimateInvokeFee(call, {
+            version: constants.TRANSACTION_VERSION.V3,
+            nonce,
+            blockIdentifier: "pending",
+            skipValidate: false,
+        });
+        const resourceBounds = padResourceBounds(estimate.resourceBounds);
+        console.log("Estimated V3 bounds:", JSON.stringify(estimate.resourceBounds));
+        console.log("Using padded V3 bounds:", JSON.stringify(resourceBounds));
 
         // 3. Execute
         const { transaction_hash } = await account.execute(
+            call,
             {
-                contractAddress,
-                entrypoint,
-                calldata
-            },
-            {
-                version: 3,
+                version: constants.TRANSACTION_VERSION.V3,
                 nonce,
-                resourceBounds
+                blockIdentifier: "pending",
+                skipValidate: false,
+                resourceBounds,
             }
         );
 

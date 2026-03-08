@@ -24,6 +24,11 @@ async function main() {
     console.log(`Executing ${entrypoint} on ${contractAddress} with calldata:`, calldata);
 
     try {
+        // Manually fetch nonce using "latest" which is more robust than "pending" across providers
+        console.log("Fetching nonce (latest)...");
+        const nonce = await provider.getNonceForAddress(accountAddress, "latest");
+        console.log(`Using nonce: ${nonce}`);
+
         const { transaction_hash } = await account.execute(
             {
                 contractAddress,
@@ -31,7 +36,8 @@ async function main() {
                 calldata
             },
             {
-                version: 3 // Force V3
+                version: 3, // Force V3
+                nonce
             }
         );
 

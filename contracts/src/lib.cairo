@@ -32,6 +32,7 @@ pub trait IPIFP<TContractState> {
     fn get_project_count(self: @TContractState) -> u64;
     fn get_activity_count(self: @TContractState, user: ContractAddress) -> u64;
     fn get_activity(self: @TContractState, user: ContractAddress, activity_id: u64) -> ActivityRecord;
+    fn get_oracle(self: @TContractState) -> ContractAddress;
 }
 
 #[starknet::interface]
@@ -345,6 +346,10 @@ pub mod PIFP {
 
         fn get_activity(self: @ContractState, user: ContractAddress, activity_id: u64) -> ActivityRecord {
             self.activities.read((user, activity_id))
+        }
+
+        fn get_oracle(self: @ContractState) -> ContractAddress {
+            self.oracle.read()
         }
     }
 

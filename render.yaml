@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: pifp-oracle-service
+    env: rust
+    rootDir: oracle-service
+    buildCommand: bash scripts/render-build.sh
+    startCommand: bash scripts/render-start.sh

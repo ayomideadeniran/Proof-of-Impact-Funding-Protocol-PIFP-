@@ -267,9 +267,33 @@ If `ORACLE_USE_SNCAST=true`, the bridge will invoke through your local `sncast` 
 
 If the bridge logs `Account: invalid signature`, the issue is not the deployed contract. It means the local `ORACLE_PRIVATE_KEY` does not control `ORACLE_ACCOUNT_ADDRESS`, or that account uses a signer setup this bridge does not support.
 
+## 16. Render Deployment
+
+The repo now includes [render.yaml](/home/knights/Documents/Project/Proof-of-Impact Funding Protocol (PIFP)/render.yaml) plus Render helper scripts in [render-build.sh](/home/knights/Documents/Project/Proof-of-Impact Funding Protocol (PIFP)/oracle-service/scripts/render-build.sh) and [render-start.sh](/home/knights/Documents/Project/Proof-of-Impact Funding Protocol (PIFP)/oracle-service/scripts/render-start.sh).
+
+This setup:
+
+* installs `sncast` during Render build
+* copies the binary into `oracle-service/.render/bin/sncast`
+* sets `ORACLE_SNCAST_BIN` automatically at runtime if not already set
+* can write an accounts file from `ORACLE_SNCAST_ACCOUNTS_JSON` at startup
+
+Recommended Render env for `sncast` mode:
+
+```env
+ORACLE_USE_SNCAST=true
+ORACLE_SNCAST_ACCOUNT=pifp_deployer
+ORACLE_RPC_URL=https://your-testnet-rpc
+ORACLE_PIFP_CONTRACT_ADDRESS=0x...
+ORACLE_CALLER_ADDRESS=0x...
+ORACLE_SNCAST_ACCOUNTS_JSON={"alpha-sepolia":{"pifp_deployer":{"address":"0x...","class_hash":"0x...","deployed":true,"legacy":false,"private_key":"0x...","public_key":"0x...","salt":"0x...","type":"open_zeppelin"}}}
+```
+
+If you already provision the accounts file another way, set `ORACLE_ACCOUNTS_FILE` instead of `ORACLE_SNCAST_ACCOUNTS_JSON`.
+
 ---
 
-## 15. Conclusion
+## 17. Conclusion
 
 PIFP transforms global funding into a verifiable system where impact, not promises, controls payments.
 
@@ -277,7 +301,7 @@ By combining Starknet execution, proof-gated release logic, and privacy-aware ha
 
 ---
 
-## 16. Privacy Limitations & Next Steps
+## 18. Privacy Limitations & Next Steps
 
 Current limitations:
 

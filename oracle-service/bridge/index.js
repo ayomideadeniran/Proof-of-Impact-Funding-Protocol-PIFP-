@@ -88,9 +88,9 @@ async function executeViaSncast(entrypoint, calldata, contractAddress, rpcUrl) {
     const args = [
         "--json",
         "--wait",
-        "invoke",
         "--account",
         sncastAccount,
+        "invoke",
         "--url",
         rpcUrl,
         "--contract-address",

@@ -9,7 +9,6 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use sha2::{Sha256, Digest};
-use std::process::Command;
 use tower_http::cors::CorsLayer;
 use once_cell::sync::Lazy;
 use rand::Rng;
@@ -133,81 +132,104 @@ fn normalize_hash(hash: &str) -> Result<String, String> {
     Ok(format!("0x{}", no_prefix.to_lowercase()))
 }
 
-fn extract_tx_hash(output: &str) -> Option<String> {
-    if let Some(line) = output.lines().find(|line| line.to_lowercase().contains("transaction hash")) {
-        return line
-            .split_whitespace()
-            .find(|part| part.starts_with("0x"))
-            .map(ToString::to_string);
-    }
+use starknet::{
+    accounts::{Account, Call, ExecutionEncoding, SingleOwnerAccount},
+    core::{
+        types::FieldElement,
+        utils::get_selector_from_name,
+    },
+    providers::{
+        jsonrpc::{HttpTransport, JsonRpcClient},
+        Provider,
+    },
+    signers::{LocalWallet, SigningKey},
+};
+use url::Url;
 
-    output
-        .split_whitespace()
-        .find(|part| part.starts_with("0x") && part.len() > 10)
-        .map(ToString::to_string)
-}
+async fn get_starknet_provider() -> Result<JsonRpcClient<HttpTransport>, String> {
+    let primary_rpc = std::env::var("ORACLE_RPC_URL")
+        .unwrap_or_else(|_| "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/ckCaCOPs1z8MLhPX4-hgd".to_string());
+    let fallback_rpc = std::env::var("ORACLE_RPC_URL_FALLBACK")
+        .unwrap_or_else(|_| "https://starknet-sepolia-rpc.publicnode.com".to_string());
 
-fn run_sncast_invoke(
-    function_name: &str,
-    calldata: &[String],
-) -> Result<String, String> {
-    let sncast_bin = std::env::var("ORACLE_SNCAST_BIN").unwrap_or_else(|_| "sncast".to_string());
-    let primary_rpc_url = std::env::var("ORACLE_RPC_URL")
-        .unwrap_or_else(|_| "https://api.cartridge.gg/x/starknet/sepolia".to_string());
-    let fallback_rpc_url = std::env::var("ORACLE_RPC_URL_FALLBACK")
-        .unwrap_or_else(|_| "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_9/ckCaCOPs1z8MLhPX4-hgd".to_string());
-    let account_name = std::env::var("ORACLE_SNCAST_ACCOUNT").unwrap_or_else(|_| "pifp_deployer".to_string());
-    let contract_address = std::env::var("ORACLE_PIFP_CONTRACT_ADDRESS")
-        .map_err(|_| "ORACLE_PIFP_CONTRACT_ADDRESS is not set".to_string())?;
-
-    let mut urls = vec![primary_rpc_url];
-    if !urls.iter().any(|u| u == &fallback_rpc_url) {
-        urls.push(fallback_rpc_url);
-    }
-
-    let mut last_error = String::new();
+    let urls = vec![primary_rpc, fallback_rpc];
     for rpc_url in urls {
-        let mut cmd = Command::new(&sncast_bin);
-        cmd.arg("--account")
-            .arg(&account_name)
-            .arg("invoke")
-            .arg("--url")
-            .arg(&rpc_url)
-            .arg("--contract-address")
-            .arg(&contract_address)
-            .arg("--function")
-            .arg(function_name)
-            .arg("--calldata");
-        for value in calldata {
-            cmd.arg(value);
+        if let Ok(url) = Url::parse(&rpc_url) {
+            let provider = JsonRpcClient::new(HttpTransport::new(url));
+            if provider.block_number().await.is_ok() {
+                return Ok(provider);
+            }
         }
-
-        let output = cmd
-            .output()
-            .map_err(|e| format!("Failed to execute sncast: {e}"))?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let combined = format!("{stdout}\n{stderr}");
-
-        if output.status.success() && !combined.contains("Error:") && !combined.contains("error:") {
-            return extract_tx_hash(&combined)
-                .ok_or_else(|| format!("Could not parse tx hash from sncast output: {}", combined.trim()));
-        }
-
-        last_error = format!("rpc_url={rpc_url}; {}", combined.trim());
     }
-
-    Err(last_error)
+    Err("All Starknet RPC providers failed".to_string())
 }
 
-fn invoke_submit_proof(project_id: u64, proof_hash: &str, otp_token: &str) -> Result<String, String> {
+async fn get_oracle_account<P: Provider + Send + Sync + 'static>(
+    provider: P,
+) -> Result<SingleOwnerAccount<P, LocalWallet>, String> {
+    let account_address = std::env::var("ORACLE_ACCOUNT_ADDRESS")
+        .map_err(|_| "ORACLE_ACCOUNT_ADDRESS not set".to_string())?;
+    let private_key = std::env::var("ORACLE_PRIVATE_KEY")
+        .map_err(|_| "ORACLE_PRIVATE_KEY not set".to_string())?;
+
+    let address = FieldElement::from_hex_be(&account_address)
+        .map_err(|e| format!("Invalid account address: {e}"))?;
+    let signer = LocalWallet::from_signing_key(SigningKey::from_secret_scalar(
+        FieldElement::from_hex_be(&private_key).map_err(|e| format!("Invalid private key: {e}"))?,
+    ));
+
+    let chain_id = provider
+        .chain_id()
+        .await
+        .map_err(|e| format!("Failed to get chain ID: {e}"))?;
+
+    Ok(SingleOwnerAccount::new(
+        provider,
+        signer,
+        address,
+        chain_id,
+        ExecutionEncoding::New,
+    ))
+}
+
+async fn execute_oracle_call(
+    entrypoint: &str,
+    calldata: Vec<FieldElement>,
+) -> Result<String, String> {
+    let contract_address = std::env::var("ORACLE_PIFP_CONTRACT_ADDRESS")
+        .map_err(|_| "ORACLE_PIFP_CONTRACT_ADDRESS not set".to_string())?;
+    let contract_felt = FieldElement::from_hex_be(&contract_address)
+        .map_err(|e| format!("Invalid contract address: {e}"))?;
+
+    let provider = get_starknet_provider().await?;
+    let account = get_oracle_account(provider).await?;
+
+    let result = account
+        .execute(vec![Call {
+            to: contract_felt,
+            selector: get_selector_from_name(entrypoint).unwrap(),
+            calldata,
+        }])
+        .send()
+        .await
+        .map_err(|e| format!("{entrypoint} execution failed: {e}"))?;
+
+    Ok(format!("{:#x}", result.transaction_hash))
+}
+
+async fn invoke_submit_proof(project_id: u64, proof_hash: &str, otp_token: &str) -> Result<String, String> {
+    let hash_felt = FieldElement::from_hex_be(proof_hash)
+        .map_err(|e| format!("Invalid proof hash: {e}"))?;
+    let token_felt = FieldElement::from_hex_be(otp_token)
+        .map_err(|e| format!("Invalid otp token: {e}"))?;
+
     let calldata = vec![
-        project_id.to_string(),
-        proof_hash.to_string(),
-        otp_token.to_string(),
+        FieldElement::from(project_id),
+        hash_felt,
+        token_felt,
     ];
-    run_sncast_invoke("submit_proof", &calldata).map_err(|err| format!("submit_proof failed: {err}"))
+
+    execute_oracle_call("submit_proof", calldata).await
 }
 
 async fn submit_proof(Json(payload): Json<SubmitProofRequest>) -> impl IntoResponse {
@@ -249,7 +271,7 @@ async fn submit_proof(Json(payload): Json<SubmitProofRequest>) -> impl IntoRespo
         }
     };
 
-    match invoke_submit_proof(payload.project_id, &hash, &otp_token) {
+    match invoke_submit_proof(payload.project_id, &hash, &otp_token).await {
         Ok(tx_hash) => (
             StatusCode::OK,
             Json(serde_json::json!(SubmitProofResponse {
@@ -559,6 +581,13 @@ struct OtpVerify {
     otp: String,
 }
 
+fn generate_action_token() -> String {
+    let random: [u8; 32] = rand::random();
+    let mut bytes = random.to_vec();
+    bytes[0] &= 0x07;
+    format!("0x{}", hex::encode(bytes))
+}
+
 async fn verify_otp(Json(payload): Json<OtpVerify>) -> impl IntoResponse {
     let wallet_address = payload
         .wallet_address
@@ -621,7 +650,7 @@ async fn verify_otp(Json(payload): Json<OtpVerify>) -> impl IntoResponse {
                     );
                 }
                 if should_sync_wallet_email_onchain() {
-                    if let Err(err) = invoke_upsert_wallet_email_hash(wallet, &sha256_to_felt_hex(&email)) {
+                    if let Err(err) = invoke_upsert_wallet_email_hash(wallet, &sha256_to_felt_hex(&email)).await {
                         // Keep verification successful even if on-chain email hash sync is unavailable.
                         // Wallet-email binding remains persisted in oracle local storage.
                         eprintln!("Warning: {err}");
@@ -697,34 +726,36 @@ fn wallet_for_action(action_code: u8, requested_wallet: &str) -> Result<String, 
     normalize_contract_address(requested_wallet)
 }
 
-fn invoke_upsert_wallet_email_hash(wallet_address: &str, email_hash: &str) -> Result<String, String> {
-    let calldata = vec![wallet_address.to_string(), email_hash.to_string()];
-    run_sncast_invoke("upsert_wallet_email_hash", &calldata)
-        .map_err(|err| format!("upsert_wallet_email_hash failed: {err}"))
+async fn invoke_upsert_wallet_email_hash(wallet_address: &str, email_hash: &str) -> Result<String, String> {
+    let wallet_felt = FieldElement::from_hex_be(wallet_address)
+        .map_err(|e| format!("Invalid wallet address: {e}"))?;
+    let hash_felt = FieldElement::from_hex_be(email_hash)
+        .map_err(|e| format!("Invalid email hash: {e}"))?;
+
+    let calldata = vec![wallet_felt, hash_felt];
+    execute_oracle_call("upsert_wallet_email_hash", calldata).await
 }
 
-fn generate_action_token() -> String {
-    let random: [u8; 32] = rand::random();
-    let mut bytes = random.to_vec();
-    bytes[0] &= 0x07;
-    format!("0x{}", hex::encode(bytes))
-}
-
-fn invoke_issue_otp_token(
+async fn invoke_issue_otp_token(
     wallet_address: &str,
     action_code: u8,
     project_id: u64,
     action_token: &str,
     expires_at: u64,
 ) -> Result<String, String> {
+    let wallet_felt = FieldElement::from_hex_be(wallet_address)
+        .map_err(|e| format!("Invalid wallet address: {e}"))?;
+    let token_felt = FieldElement::from_hex_be(action_token)
+        .map_err(|e| format!("Invalid action token: {e}"))?;
+
     let calldata = vec![
-        wallet_address.to_string(),
-        action_code.to_string(),
-        project_id.to_string(),
-        action_token.to_string(),
-        expires_at.to_string(),
+        wallet_felt,
+        FieldElement::from(action_code),
+        FieldElement::from(project_id),
+        token_felt,
+        FieldElement::from(expires_at),
     ];
-    run_sncast_invoke("issue_otp_token", &calldata).map_err(|err| format!("issue_otp_token failed: {err}"))
+    execute_oracle_call("issue_otp_token", calldata).await
 }
 
 async fn issue_action_token(Json(payload): Json<IssueActionTokenRequest>) -> impl IntoResponse {
@@ -792,7 +823,7 @@ async fn issue_action_token(Json(payload): Json<IssueActionTokenRequest>) -> imp
     let expires_at = now + ttl_seconds;
     let action_token = generate_action_token();
 
-    match invoke_issue_otp_token(&wallet_address, action_code, project_id, &action_token, expires_at) {
+    match invoke_issue_otp_token(&wallet_address, action_code, project_id, &action_token, expires_at).await {
         Ok(_) => {
             let mut store = VERIFIED_OTP_STORE.write().await;
             store.remove(&email);

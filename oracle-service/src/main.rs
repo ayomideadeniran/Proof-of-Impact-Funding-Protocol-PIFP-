@@ -154,10 +154,17 @@ async fn get_starknet_provider() -> Result<JsonRpcClient<HttpTransport>, String>
 
     let urls = vec![primary_rpc, fallback_rpc];
     for rpc_url in urls {
+        println!("Testing RPC provider: {}", rpc_url);
         if let Ok(url) = Url::parse(&rpc_url) {
             let provider = JsonRpcClient::new(HttpTransport::new(url));
-            if provider.block_number().await.is_ok() {
-                return Ok(provider);
+            match provider.block_number().await {
+                Ok(n) => {
+                    println!("Selected RPC provider: {} (Block: {})", rpc_url, n);
+                    return Ok(provider);
+                }
+                Err(e) => {
+                    eprintln!("RPC provider {} failed health check: {:?}", rpc_url, e);
+                }
             }
         }
     }
@@ -201,20 +208,28 @@ async fn execute_oracle_call(
     let contract_felt = FieldElement::from_hex_be(&contract_address)
         .map_err(|e| format!("Invalid contract address: {e}"))?;
 
+    println!("Executing {} on contract {}", entrypoint, contract_address);
     let provider = get_starknet_provider().await?;
     let account = get_oracle_account(provider).await?;
 
-    let result = account
+    match account
         .execute(vec![Call {
             to: contract_felt,
             selector: get_selector_from_name(entrypoint).unwrap(),
             calldata,
         }])
         .send()
-        .await
-        .map_err(|e| format!("{entrypoint} execution failed: {e}"))?;
-
-    Ok(format!("{:#x}", result.transaction_hash))
+        .await {
+            Ok(result) => {
+                println!("{} success! TX Hash: {:#x}", entrypoint, result.transaction_hash);
+                Ok(format!("{:#x}", result.transaction_hash))
+            }
+            Err(e) => {
+                let err_msg = format!("{entrypoint} execution failed: {:?}", e);
+                eprintln!("{}", err_msg);
+                Err(err_msg)
+            }
+        }
 }
 
 async fn invoke_submit_proof(project_id: u64, proof_hash: &str, otp_token: &str) -> Result<String, String> {

@@ -177,8 +177,9 @@ export default function CreateProjectForm() {
         });
     };
 
-    const normalizeFeltInput = (value: string): string => {
-        return value === "0x" ? "0x0" : value;
+    const normalizeFeltInput = (value: any): string => {
+        const val = value.toString();
+        return val === "0x" ? "0x0" : val;
     };
 
     const normalizeHexFelt = (value: string): string => {

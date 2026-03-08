@@ -151,15 +151,16 @@ async fn get_starknet_provider() -> Result<JsonRpcClient<HttpTransport>, String>
         .unwrap_or_else(|_| "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/ckCaCOPs1z8MLhPX4-hgd".to_string());
     let fallback_rpc = std::env::var("ORACLE_RPC_URL_FALLBACK")
         .unwrap_or_else(|_| "https://starknet-sepolia-rpc.publicnode.com".to_string());
+    let third_rpc = "https://starknet-sepolia.public.blastapi.io".to_string();
 
-    let urls = vec![primary_rpc, fallback_rpc];
+    let urls = vec![primary_rpc, fallback_rpc, third_rpc];
     for rpc_url in urls {
         println!("Testing RPC provider: {}", rpc_url);
         if let Ok(url) = Url::parse(&rpc_url) {
             let provider = JsonRpcClient::new(HttpTransport::new(url));
             match provider.block_number().await {
                 Ok(n) => {
-                    println!("Selected RPC provider: {} (Block: {})", rpc_url, n);
+                    println!("Selected RPC provider successfully: {} (Block: {})", rpc_url, n);
                     return Ok(provider);
                 }
                 Err(e) => {

@@ -4,6 +4,6 @@
   "description": "Bridge for sending V3 transactions from Rust",
   "main": "index.js",
   "dependencies": {
-    "starknet": "^6.11.0"
+    "starknet": "^6.15.0"
   }
 }

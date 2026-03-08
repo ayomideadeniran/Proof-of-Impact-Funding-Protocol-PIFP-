@@ -24,10 +24,17 @@ async function main() {
     console.log(`Executing ${entrypoint} on ${contractAddress} with calldata:`, calldata);
 
     try {
-        // Manually fetch nonce using "latest" which is more robust than "pending" across providers
         console.log("Fetching nonce (latest)...");
         const nonce = await provider.getNonceForAddress(accountAddress, "latest");
         console.log(`Using nonce: ${nonce}`);
+
+        // Manually specify resource bounds to bypass library/node estimation bugs regarding l1_data_gas
+        // These are safe high-end defaults for simple contract calls
+        const resourceBounds = {
+            l1_gas: { max_amount: "0x186a0", max_price_per_unit: "0x10000000000" }, // 100k gas, 100 Gwei
+            l2_gas: { max_amount: "0x0", max_price_per_unit: "0x0" },
+            l1_data_gas: { max_amount: "0x0", max_price_per_unit: "0x0" }
+        };
 
         const { transaction_hash } = await account.execute(
             {
@@ -36,8 +43,9 @@ async function main() {
                 calldata
             },
             {
-                version: 3, // Force V3
-                nonce
+                version: 3,
+                nonce,
+                resourceBounds, // Provide parameters manually to avoid failing "estimateFee"
             }
         );
 

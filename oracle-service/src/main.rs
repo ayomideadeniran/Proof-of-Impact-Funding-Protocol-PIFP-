@@ -195,7 +195,7 @@ async fn get_oracle_account<P: Provider + Send + Sync + 'static>(
         signer,
         address,
         chain_id,
-        ExecutionEncoding::Legacy,
+        ExecutionEncoding::New,
     ))
 }
 

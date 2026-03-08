@@ -148,7 +148,7 @@ use url::Url;
 
 async fn get_starknet_provider() -> Result<JsonRpcClient<HttpTransport>, String> {
     let primary_rpc = std::env::var("ORACLE_RPC_URL")
-        .unwrap_or_else(|_| "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_7/ckCaCOPs1z8MLhPX4-hgd".to_string());
+        .unwrap_or_else(|_| "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_6/ckCaCOPs1z8MLhPX4-hgd".to_string());
     let fallback_rpc = std::env::var("ORACLE_RPC_URL_FALLBACK")
         .unwrap_or_else(|_| "https://starknet-sepolia-rpc.publicnode.com".to_string());
     let third_rpc = "https://starknet-sepolia.public.blastapi.io".to_string();

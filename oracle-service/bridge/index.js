@@ -1,3 +1,4 @@
+const { spawn } = require("child_process");
 const { Account, RpcProvider, constants } = require("starknet");
 
 function hexToBigInt(value) {
@@ -66,6 +67,77 @@ async function resolveSupportedBlockTag(provider, accountAddress) {
     }
 }
 
+function extractTxHash(output) {
+    const transactionHashMatch = output.match(/"transaction_hash"\s*:\s*"(0x[a-fA-F0-9]+)"/);
+    if (transactionHashMatch) {
+        return transactionHashMatch[1];
+    }
+    const genericHashMatches = [...output.matchAll(/\b0x[a-fA-F0-9]{32,}\b/g)];
+    return genericHashMatches.at(-1)?.[0] ?? null;
+}
+
+async function executeViaSncast(entrypoint, calldata, contractAddress, rpcUrl) {
+    const sncastBin = process.env.ORACLE_SNCAST_BIN || "sncast";
+    const sncastAccount = process.env.ORACLE_SNCAST_ACCOUNT;
+    const accountsFile = process.env.ORACLE_ACCOUNTS_FILE;
+
+    if (!sncastAccount) {
+        throw new Error("ORACLE_SNCAST_ACCOUNT is required when ORACLE_USE_SNCAST=true");
+    }
+
+    const args = [
+        "--json",
+        "--wait",
+        "invoke",
+        "--account",
+        sncastAccount,
+        "--url",
+        rpcUrl,
+        "--contract-address",
+        contractAddress,
+        "--function",
+        entrypoint,
+        "--calldata",
+        ...calldata,
+    ];
+
+    if (accountsFile) {
+        args.splice(4, 0, "--accounts-file", accountsFile);
+    }
+
+    const child = spawn(sncastBin, args, {
+        env: process.env,
+        stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+
+    child.stdout.on("data", (chunk) => {
+        stdout += chunk.toString();
+    });
+    child.stderr.on("data", (chunk) => {
+        stderr += chunk.toString();
+    });
+
+    const exitCode = await new Promise((resolve, reject) => {
+        child.on("error", reject);
+        child.on("close", resolve);
+    });
+
+    if (exitCode !== 0) {
+        throw new Error(`sncast invoke failed (${exitCode}): ${stderr || stdout}`);
+    }
+
+    const txHash = extractTxHash(stdout);
+    if (!txHash) {
+        throw new Error(`sncast invoke succeeded but no transaction hash was found in output: ${stdout}`);
+    }
+
+    console.log("sncast invoke output:", stdout.trim());
+    return txHash;
+}
+
 async function main() {
     const entrypoint = process.argv[2];
     const calldata = process.argv.slice(3);
@@ -80,8 +152,28 @@ async function main() {
     const accountAddress = process.env.ORACLE_ACCOUNT_ADDRESS;
     const privateKey = process.env.ORACLE_PRIVATE_KEY;
     const contractAddress = process.env.ORACLE_PIFP_CONTRACT_ADDRESS;
+    const useSncast = process.env.ORACLE_USE_SNCAST === "true";
 
-    if (!rpcUrl || !accountAddress || !privateKey || !contractAddress) {
+    if (!rpcUrl || !contractAddress) {
+        console.error("Missing environment variables (ORACLE_RPC_URL, ORACLE_PIFP_CONTRACT_ADDRESS)");
+        process.exit(1);
+    }
+
+    if (useSncast) {
+        try {
+            console.log(`Executing ${entrypoint} on ${contractAddress} with calldata:`, calldata);
+            const transactionHash = await executeViaSncast(entrypoint, calldata, contractAddress, rpcUrl);
+            console.log("SUCCESS");
+            console.log(transactionHash);
+            process.exit(0);
+        } catch (error) {
+            const message = error?.message || String(error);
+            console.error("Execution failed:", message);
+            process.exit(1);
+        }
+    }
+
+    if (!accountAddress || !privateKey) {
         console.error("Missing environment variables (ORACLE_RPC_URL, ORACLE_ACCOUNT_ADDRESS, ORACLE_PRIVATE_KEY, ORACLE_PIFP_CONTRACT_ADDRESS)");
         process.exit(1);
     }

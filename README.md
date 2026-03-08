@@ -239,6 +239,18 @@ ORACLE_CALLER_ADDRESS=0x...
 PORT=3001
 ```
 
+If you already have a local `sncast` account configured, you can bypass bridge private-key signing entirely:
+
+```env
+ORACLE_USE_SNCAST=true
+ORACLE_SNCAST_BIN=sncast
+ORACLE_SNCAST_ACCOUNT=pifp_deployer
+ORACLE_RPC_URL=https://your-testnet-rpc
+ORACLE_PIFP_CONTRACT_ADDRESS=0x...
+ORACLE_CALLER_ADDRESS=0x...
+PORT=3001
+```
+
 Run locally from the `oracle-service` directory:
 
 ```bash
@@ -250,6 +262,8 @@ Or force a specific file:
 ```bash
 ORACLE_ENV_FILE=.env.local cargo run
 ```
+
+If `ORACLE_USE_SNCAST=true`, the bridge will invoke through your local `sncast` account instead of `starknet.js` signing. This is the preferred local path when your machine already has the correct Starknet account configured in `~/.starknet_accounts`.
 
 If the bridge logs `Account: invalid signature`, the issue is not the deployed contract. It means the local `ORACLE_PRIVATE_KEY` does not control `ORACLE_ACCOUNT_ADDRESS`, or that account uses a signer setup this bridge does not support.
 

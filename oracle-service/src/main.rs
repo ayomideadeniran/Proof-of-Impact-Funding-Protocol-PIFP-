@@ -260,21 +260,6 @@ async fn execute_oracle_call(
         calldata,
     }]);
     
-    // Check balance first to avoid silent failing
-    let balance_res = manual_rpc_call("starknet_getStorageAt", serde_json::json!([
-        "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7", // ETH address
-        format!("{:#x}", account.address()),
-        "latest"
-    ])).await;
-    
-    if let Ok(balance_hex) = balance_res {
-        if balance_hex == "0x0" {
-            let msg = format!("Oracle account {:#x} has 0 ETH balance. Please fund it.", account.address());
-            eprintln!("{}", msg);
-            return Err(msg);
-        }
-    }
-
     match execution.send().await {
         Ok(result) => {
             println!("{} submitted! Hash: {:#x}. Waiting for confirmation...", entrypoint, result.transaction_hash);

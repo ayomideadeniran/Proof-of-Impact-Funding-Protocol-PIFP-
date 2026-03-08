@@ -24,18 +24,45 @@ async function main() {
     console.log(`Executing ${entrypoint} on ${contractAddress} with calldata:`, calldata);
 
     try {
+        // 1. Fetch Nonce
         console.log("Fetching nonce (latest)...");
         const nonce = await provider.getNonceForAddress(accountAddress, "latest");
         console.log(`Using nonce: ${nonce}`);
 
-        // Manually specify resource bounds to bypass library/node estimation bugs regarding l1_data_gas
-        // These are safe high-end defaults for simple contract calls
-        const resourceBounds = {
-            l1_gas: { max_amount: "0x186a0", max_price_per_unit: "0x10000000000" }, // 100k gas, 100 Gwei
-            l2_gas: { max_amount: "0x0", max_price_per_unit: "0x0" },
-            l1_data_gas: { max_amount: "0x0", max_price_per_unit: "0x0" }
-        };
+        // 2. Resource Bounds Strategy
+        let resourceBounds;
+        try {
+            console.log("Estimating fee (V3)...");
+            // Attempt auto-estimation first for cost efficiency
+            const estimate = await account.estimateInvokeFee(
+                [{ contractAddress, entrypoint, calldata }],
+                { version: 3, nonce, blockIdentifier: "latest" }
+            );
 
+            // Apply a 50% buffer to the estimate
+            const gasPrice = BigInt(estimate.gas_price || estimate.resource_bounds?.l1_gas?.max_price_per_unit || "0x3b9aca00"); // Default 1 Gwei
+            const gasAmount = BigInt(estimate.gas_consumed || estimate.resource_bounds?.l1_gas?.max_amount || "0x186a0"); // Default 100k
+
+            resourceBounds = {
+                l1_gas: {
+                    max_amount: "0x" + (gasAmount * 2n).toString(16),
+                    max_price_per_unit: "0x" + (gasPrice * 2n).toString(16)
+                },
+                l2_gas: { max_amount: "0x0", max_price_per_unit: "0x0" },
+                l1_data_gas: { max_amount: "0x0", max_price_per_unit: "0x0" }
+            };
+            console.log("Estimation success. Bounds:", JSON.stringify(resourceBounds));
+        } catch (e) {
+            console.warn("Estimation failed, using robust fallback bounds:", e.message);
+            // Bypasses "missing field: l1_data_gas" or "Invalid block id" during estimation
+            resourceBounds = {
+                l1_gas: { max_amount: "0x7a120", max_price_per_unit: "0x4a817c800" }, // 500k gas, 20 Gwei
+                l2_gas: { max_amount: "0x0", max_price_per_unit: "0x0" },
+                l1_data_gas: { max_amount: "0x0", max_price_per_unit: "0x0" }
+            };
+        }
+
+        // 3. Execute
         const { transaction_hash } = await account.execute(
             {
                 contractAddress,
@@ -45,15 +72,15 @@ async function main() {
             {
                 version: 3,
                 nonce,
-                resourceBounds, // Provide parameters manually to avoid failing "estimateFee"
+                resourceBounds
             }
         );
 
         console.log(`Transaction submitted! Hash: ${transaction_hash}`);
-        
+
         console.log("Waiting for confirmation...");
         const result = await provider.waitForTransaction(transaction_hash);
-        
+
         if (result.isSuccess()) {
             console.log("SUCCESS");
             console.log(transaction_hash);

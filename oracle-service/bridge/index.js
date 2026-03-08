@@ -29,22 +29,22 @@ async function main() {
         const nonce = await provider.getNonceForAddress(accountAddress, "latest");
         console.log(`Using nonce: ${nonce}`);
 
-        // 2. Resource Bounds (Bypassing failing auto-estimation for V3)
-        // Sepolia requires non-zero l1_data_gas and a competitive l1_gas price.
-        // Total max fee: (100k + 1k) * 10 Gwei = 0.00101 ETH (safe within 0.002 ETH balance)
+        // 2. Resource Bounds (Economy-Scale V3 Strategy)
+        // High gas limit (500k) to cover complex Argent validation + execution
+        // Moderate gas price (2 Gwei) to ensure total max fee (~0.001 ETH) < account balance (0.002 ETH)
         const resourceBounds = {
             l1_gas: { 
-                max_amount: "0x186a0",         // 100,000 gas 
-                max_price_per_unit: "0x2540be400" // 10 Gwei (very safe for Sepolia)
+                max_amount: "0x7a120",         // 500,000 gas
+                max_price_per_unit: "0x77359400" // 2 Gwei (Current network is ~1 Gwei)
             },
             l2_gas: { max_amount: "0x0", max_price_per_unit: "0x0" },
             l1_data_gas: { 
-                max_amount: "0x3e8",           // 1,000 gas
-                max_price_per_unit: "0x2540be400" // 10 Gwei
+                max_amount: "0x2710",          // 10,000 gas
+                max_price_per_unit: "0x77359400" // 2 Gwei
             }
         };
 
-        console.log("Using robust V3 bounds:", JSON.stringify(resourceBounds));
+        console.log("Using Economy-Scale V3 bounds:", JSON.stringify(resourceBounds));
 
         // 3. Execute
         const { transaction_hash } = await account.execute(

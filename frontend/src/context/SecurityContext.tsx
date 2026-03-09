@@ -278,7 +278,7 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
             notify({
                 title: "OTP sent",
                 message: data.dev_otp
-                    ? `OTP sent to ${requestLabel}. Dev code: ${data.dev_otp}`
+                    ? `Demo mode is enabled. Use the OTP shown in the modal for ${requestLabel}.`
                     : `OTP sent to ${requestLabel}.`,
                 type: "info"
             });
@@ -495,7 +495,10 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
                         </div>
                         {devOtp && (
                             <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-xs text-emerald-300">
-                                <p className="font-semibold uppercase tracking-wider text-[10px] text-emerald-400/80 mb-1">Dev Code Snippet</p>
+                                <p className="font-semibold uppercase tracking-wider text-[10px] text-emerald-400/80 mb-1">Demo OTP</p>
+                                <p className="mb-2 text-[11px] text-emerald-200/80">
+                                    Email delivery is bypassed for public testing. Use this code to continue.
+                                </p>
                                 <div className="flex items-center justify-between gap-2">
                                     <code className="font-mono text-sm tracking-widest font-bold text-white">{devOtp}</code>
                                     <button
@@ -504,7 +507,7 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
                                             await navigator.clipboard.writeText(devOtp);
                                             notify({
                                                 title: "OTP copied",
-                                                message: "Dev OTP copied to clipboard.",
+                                                message: "Demo OTP copied to clipboard.",
                                                 type: "info"
                                             });
                                         }}

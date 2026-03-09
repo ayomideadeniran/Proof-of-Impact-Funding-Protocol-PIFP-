@@ -23,6 +23,7 @@ const ORACLE_URL = process.env.NEXT_PUBLIC_ORACLE_URL ?? "http://127.0.0.1:3001"
 const PROFILE_STORAGE_KEY = "pifp_security_profiles_v1";
 const OTP_DIGITS = 6;
 const REQUEST_COOLDOWN_SECONDS = 20;
+const RENDER_COLD_START_SECONDS = 50;
 
 type SecurityProfile = {
     email: string;
@@ -247,6 +248,12 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
         }
 
         setRequesting(true);
+        notify({
+            title: "Starting OTP request",
+            message: `The backend is hosted on Render and may take up to ${RENDER_COLD_START_SECONDS} seconds to wake up before the OTP is sent.`,
+            type: "info",
+            durationMs: 9000
+        });
         try {
             const res = await fetch(`${ORACLE_URL}/request-otp`, {
                 method: "POST",
@@ -280,9 +287,16 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
             setOtpRequestedForEmail("");
             setOtpExpiresAtMs(0);
             setDevOtp("");
+            const errorMessage = error instanceof Error ? error.message : "Could not send OTP. Ensure oracle-service is running.";
+            const looksLikeColdStart =
+                errorMessage === "Failed to fetch" ||
+                errorMessage.toLowerCase().includes("fetch") ||
+                errorMessage.toLowerCase().includes("network");
             notify({
                 title: "OTP request failed",
-                message: error instanceof Error ? error.message : "Could not send OTP. Ensure oracle-service is running.",
+                message: looksLikeColdStart
+                    ? `The Render backend may still be waking up. Wait about ${RENDER_COLD_START_SECONDS} seconds, then request OTP again.`
+                    : errorMessage,
                 type: "error"
             });
         } finally {
@@ -435,6 +449,9 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
                             {walletHasBoundEmail
                                 ? `Wallet-linked email: ${savedEmailMasked || savedEmail} (OTP will always be sent here)`
                                 : "First-time signup: add an email to bind OTP security to this wallet."}
+                        </p>
+                        <p className="text-xs text-amber-300/90 mt-3 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                            The OTP backend is hosted on Render. If the server is asleep, the first OTP request can take up to {RENDER_COLD_START_SECONDS} seconds while it wakes up.
                         </p>
 
                         <div className="space-y-4 mt-6">

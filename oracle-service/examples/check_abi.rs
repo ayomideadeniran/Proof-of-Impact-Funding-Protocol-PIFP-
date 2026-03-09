@@ -8,7 +8,7 @@ use url::Url;
 async fn main() {
     let rpc_url = Url::parse("https://free-rpc.nethermind.io/sepolia-juno").unwrap();
     let provider = JsonRpcClient::new(HttpTransport::new(rpc_url));
-    let contract_address = FieldElement::from_hex_be("0x07a0ac05b1e0472a78e40f6c19942484bdd2440a9568382fee997f36edb937fa").unwrap();
+    let contract_address = FieldElement::from_hex_be("0x00bba91064a4f42102bf8d0630deb57c2261a1d835822e5f957a6b309e9a460d").unwrap();
 
     let class_hash = provider.get_class_hash_at(BlockId::Tag(BlockTag::Latest), contract_address).await;
     match class_hash {

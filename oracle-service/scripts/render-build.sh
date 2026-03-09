@@ -21,7 +21,10 @@ if ! command -v sncast >/dev/null 2>&1; then
     sncast
 fi
 
-cp "$(command -v sncast)" "$BIN_DIR/sncast"
+SNCAST_PATH="$(command -v sncast)"
+if [ "$SNCAST_PATH" != "$BIN_DIR/sncast" ]; then
+  cp "$SNCAST_PATH" "$BIN_DIR/sncast"
+fi
 chmod +x "$BIN_DIR/sncast"
 
 cargo build --release

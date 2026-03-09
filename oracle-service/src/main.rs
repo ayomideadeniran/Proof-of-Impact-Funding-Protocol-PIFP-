@@ -548,7 +548,7 @@ async fn request_otp(Json(payload): Json<OtpRequest>) -> impl IntoResponse {
         Json(serde_json::json!(OtpRequestResponse {
             status: "OTP Sent".to_string(),
             expires_in_seconds: ttl_seconds,
-            dev_otp: if should_expose_dev_otp() { Some(code) } else { None },
+            dev_otp: None,
         })),
     )
 }

@@ -5,6 +5,20 @@
 
 ---
 
+## Submission Summary (<=500 words)
+
+Proof-of-Impact Funding Protocol (PIFP) is a Starknet application that makes funding conditional on verifiable impact. Instead of relying on donors to trust intermediaries, PIFP escrows funds on-chain and releases them only after the required proof of completion is submitted and validated.
+
+In the current build, a creator opens a project with a funding goal, a fixed donation amount, a recipient, and a proof requirement hash. Donors contribute through an OTP-protected flow that enforces one donation per wallet per project. Donations are held in contract-controlled escrow using a configured ERC20 payment token. When the project implementer is ready to prove completion, the proof is hashed and submitted through the oracle-backed verification flow. If the submitted proof hash matches the expected hash stored for that project, the contract marks the project as completed and releases the escrowed funds to the recipient.
+
+The stack consists of a Cairo smart contract on Starknet, a Rust oracle service for OTP issuance and proof submission, and a Next.js frontend for project creation, donation, and verification. The oracle does not custody funds. Its role is limited to issuing short-lived action tokens after OTP verification and relaying authorized proof-related actions to Starknet.
+
+From a privacy perspective, this version is privacy-aware rather than fully private. Raw evidence is not posted on-chain. Instead, the frontend and backend work with proof hashes, so integrity is anchored publicly while sensitive source material can remain off-chain. This reduces unnecessary exposure, but donation amounts, wallet addresses, and project state remain public on Starknet.
+
+PIFP fits the Wildcard track best because the shipped product is a complete Starknet funding workflow with practical anti-abuse controls: OTP-gated actions, on-chain escrow, one-donation-per-wallet enforcement, proof-gated payout, and wallet activity tracking. Bitcoin support is roadmap-only in this version and not the core of the submission.
+
+---
+
 ## 1. Project Overview
 
 **Proof-of-Impact Funding Protocol (PIFP)** is a Starknet funding platform that ensures donated funds are only released when verifiable real-world impact occurs.
@@ -57,8 +71,8 @@ A project creator registers a project with:
 
 ### Step 2: Donors Fund Project
 
-Users deposit Bitcoin-backed value into a Starknet-controlled funding pool.
-Donations are anonymous via commitment scheme.
+Users donate a fixed ERC20 amount into a Starknet-controlled escrow contract.
+The protocol enforces one donation per wallet per project and records a commitment marker to prevent reuse.
 
 ### Step 3: Proof Submission
 
@@ -121,8 +135,8 @@ Planned direction:
 * create_project()
 * donate(commitment)
 * submit_proof(proof_hash)
-* verify_and_release()
-* refund_if_expired()
+* issue_otp_token()
+* release_funds() through proof verification
 
 ---
 
@@ -147,7 +161,7 @@ It only relays verifiable data.
 Minimal interface:
 
 1. Create project
-2. Fund project anonymously
+2. Fund project with a fixed ERC20 donation amount
 3. Submit proof
 4. Trigger payout
 
@@ -157,8 +171,8 @@ Minimal interface:
 
 * Funds locked in smart contract (non-custodial)
 * Hash-based proof verification
-* Replay protection using nullifiers
-* Expiry refund mechanism
+* One-time OTP action tokens for protected actions
+* One donation per wallet per project
 * No admin withdrawal privileges
 
 ---
@@ -166,7 +180,7 @@ Minimal interface:
 ## 11. Demo Flow (3-Minute Video)
 
 1. Create water project
-2. Donors fund anonymously
+2. Donors fund with the configured ERC20 payment token
 3. Funds locked on-chain
 4. Installer uploads proof
 5. Contract verifies proof
@@ -317,7 +331,7 @@ Next steps:
 
 ---
 
-## 17. Security & Authentication Model (Tight Security Implementation)
+## 19. Security & Authentication Model
 
 The platform implements multi-layer security combining Web2 authentication protections and Web3 cryptographic guarantees.
 
@@ -345,36 +359,19 @@ Protected actions:
 * Project creation
 * Donation submission
 * Proof submission
-* Fund release trigger
-* Refund request
 
-OTP delivered via:
-
-* Email
-* Authenticator app (TOTP preferred)
-
-OTP expires in 60 seconds and cannot be reused.
+OTP is currently delivered by email through the oracle service.
+Action tokens are short-lived and consumed once on-chain.
 
 ---
 
-### C. Transaction Intent Hash (Anti‑Phishing Layer)
+### C. Replay Resistance
 
-Before any contract interaction, user must approve a transaction intent:
+The current build uses:
 
-intent_hash = hash(user + action + amount + timestamp)
-
-User signs intent before sending transaction.
-Prevents hidden or injected transactions.
-
----
-
-### D. Replay Protection (Nullifiers)
-
-Each action generates a unique nullifier:
-
-nullifier = hash(secret + action_id)
-
-Stored on-chain to prevent duplicate execution.
+* one-time OTP action tokens for protected actions
+* one donation per wallet per project enforcement
+* commitment tracking to prevent commitment reuse
 
 ---
 
@@ -403,7 +400,6 @@ Rust backend protections:
 * No admin withdrawal permissions
 * Funds only move via verified conditions
 * Immutable payout logic
-* Expiry refund mechanism
 
 ---
 
@@ -414,8 +410,6 @@ Even if the backend is compromised, attackers cannot steal funds because:
 * Funds are controlled by smart contracts
 * Transactions require wallet signatures
 * Critical actions require OTP confirmation
-* Nullifiers prevent replay attacks
+* One-time action tokens and donation guards reduce replay/abuse risk
 
 This creates defense‑in‑depth protection combining cryptographic security and user authentication safeguards.
-# Proof-of-Impact-Funding-Protocol-PIFP-
-// Finalizing commit 30: repository overview and push

@@ -278,7 +278,7 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
             notify({
                 title: "OTP sent",
                 message: data.dev_otp
-                    ? `Demo mode is enabled. Use the OTP shown in the modal for ${requestLabel}.`
+                    ? `Demo mode is enabled. Use the OTP shown in the modal for ${requestLabel}. Real email OTP requires Resend to be configured on the backend.`
                     : `OTP sent to ${requestLabel}.`,
                 type: "info"
             });
@@ -498,6 +498,9 @@ export function SecurityProvider({ children }: { children: React.ReactNode }) {
                                 <p className="font-semibold uppercase tracking-wider text-[10px] text-emerald-400/80 mb-1">Demo OTP</p>
                                 <p className="mb-2 text-[11px] text-emerald-200/80">
                                     Email delivery is bypassed for public testing. Use this code to continue.
+                                </p>
+                                <p className="mb-2 text-[11px] text-emerald-200/70">
+                                    To enable real email OTP, the backend owner must configure Resend on the oracle service with a verified sender domain and the required env variables.
                                 </p>
                                 <div className="flex items-center justify-between gap-2">
                                     <code className="font-mono text-sm tracking-widest font-bold text-white">{devOtp}</code>

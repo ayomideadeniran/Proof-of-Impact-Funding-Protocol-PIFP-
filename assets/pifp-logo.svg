@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 220" role="img" aria-label="Proof-of-Impact Funding Protocol logo">
+  <defs>
+    <linearGradient id="pifpAccent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#17c964"/>
+      <stop offset="100%" stop-color="#14b8a6"/>
+    </linearGradient>
+    <linearGradient id="pifpDark" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#111827"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="0" y="0" width="720" height="220" fill="none"/>
+
+  <!-- Mark -->
+  <g transform="translate(24,24)">
+    <path d="M86 4L148 30V84C148 133 118 170 86 188C54 170 24 133 24 84V30L86 4Z" fill="url(#pifpDark)"/>
+    <path d="M86 20L132 40V84C132 123 108 152 86 166C64 152 40 123 40 84V40L86 20Z" fill="#0b1220"/>
+    <path d="M66 88L80 102L110 72" fill="none" stroke="url(#pifpAccent)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="120" cy="136" r="20" fill="url(#pifpAccent)"/>
+    <circle cx="120" cy="136" r="12" fill="#0b1220"/>
+    <path d="M120 124V148M112 136H128" stroke="#0b1220" stroke-width="4" stroke-linecap="round"/>
+  </g>
+
+  <!-- Wordmark -->
+  <g transform="translate(210,52)">
+    <text x="0" y="48" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700" fill="#0f172a">
+      Proof-of-Impact
+    </text>
+    <text x="0" y="92" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="600" fill="#14b8a6">
+      Funding Protocol
+    </text>
+    <rect x="0" y="112" width="260" height="6" rx="3" fill="url(#pifpAccent)"/>
+    <text x="0" y="150" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="500" fill="#475569">
+      Verified impact. Automated release.
+    </text>
+  </g>
+</svg>

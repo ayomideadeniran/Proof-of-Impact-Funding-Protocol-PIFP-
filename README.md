@@ -224,13 +224,18 @@ It replaces trust-based funding with cryptographic accountability.
 
 ---
 
-## 14. Submission Requirements Checklist
+## 14. Submission Details
 
-* Starknet deployed contract
-* Public GitHub repository
-* Demo video (3 minutes)
-* Project description (≤500 words)
-* Starknet wallet address
+| Item | Value |
+| :--- | :--- |
+| **Starknet Contract** | `0x06360d50942e8ffa2a7ba97d471b75647663d14cade852ef3877cc9ba065b30c` (Sepolia) |
+| **Github Repository** | [PIFP Repository](https://github.com/ayomideadeniran/Proof-of-Impact-Funding-Protocol-PIFP-) |
+| **Demo Video** | [Watch Demo Video](https://www.canva.com/design/DAHDjrg_Fg8/CnSZEWQmsk3EHgsr23g81g/watch?utm_content=DAHDjrg_Fg8&utm_campaign=designshare&utm_medium=link2&utm_source=uniquelinks&utlId=hc87cb11c6e) |
+| **Starknet Wallet** | `0x55d8794dbdcea4eb7f855f7b667ae310e24253b105c57dc164cb8c4ac92a8c4` |
+| **Project Description** | See Section [Submission Summary](#submission-summary-500-words) |
+
+> [!TIP]
+> **Action Required**: Replace the video placeholder link above with your actual 3-minute demo video once uploaded.
 
 ## 15. Local Oracle Testing
 

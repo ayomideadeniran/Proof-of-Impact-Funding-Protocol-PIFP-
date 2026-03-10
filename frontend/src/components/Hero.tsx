@@ -1,8 +1,35 @@
 "use client";
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 
 const Hero = () => {
+    const [btcPrice, setBtcPrice] = useState<number | null>(null);
+    const [btcError, setBtcError] = useState(false);
+
+    useEffect(() => {
+        let cancelled = false;
+        const fetchPrice = async () => {
+            try {
+                const res = await fetch(
+                    "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd",
+                    { cache: "no-store" }
+                );
+                if (!res.ok) throw new Error("btc price fetch failed");
+                const data = await res.json();
+                const price = Number(data?.bitcoin?.usd);
+                if (!cancelled && Number.isFinite(price)) {
+                    setBtcPrice(price);
+                }
+            } catch {
+                if (!cancelled) setBtcError(true);
+            }
+        };
+        fetchPrice();
+        return () => {
+            cancelled = true;
+        };
+    }, []);
+
     return (
         <section className="relative mx-auto flex min-h-[52vh] w-full max-w-7xl flex-col items-center justify-center px-4 pb-10 text-center sm:min-h-[58vh] sm:px-6 lg:px-8">
             <motion.div
@@ -32,6 +59,27 @@ const Hero = () => {
             >
                 A trust-minimized platform where funding is released only after real-world impact is cryptographically verified. Built on Starknet.
             </motion.p>
+
+            <motion.div
+                initial={{ y: 10, opacity: 0 }}
+                animate={{ y: 0, opacity: 1 }}
+                transition={{ delay: 0.45, duration: 0.6, ease: "easeOut" }}
+                className="flex flex-wrap items-center justify-center gap-3 text-xs text-zinc-400"
+            >
+                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-emerald-300">
+                    Starknet Sepolia Live
+                </span>
+                {btcPrice !== null && (
+                    <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-3 py-1 text-cyan-200">
+                        BTC/USD ${btcPrice.toLocaleString()}
+                    </span>
+                )}
+                {btcPrice === null && btcError && (
+                    <span className="rounded-full border border-zinc-700 bg-zinc-900/60 px-3 py-1 text-zinc-400">
+                        BTC/USD unavailable
+                    </span>
+                )}
+            </motion.div>
         </section>
     );
 };
